@@ -17,13 +17,13 @@ fastqc_output_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_
 multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html"
 
 # List all the BWA MEM output SAM files without wildcards
-bwa_output_bam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam", sample=samples_R1)
+bwa_output_sam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sam", sample=samples_R1)
 
 rule all:
     input:
         fastqc_output_files,
         multiqc_report,
-        bwa_output_bam_files
+        bwa_output_sam_files
 
     
 
@@ -61,13 +61,9 @@ rule bwa_mem2:
         fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2_001.fastq.gz",
         ref = reference
     output:
-        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam",
-        bai = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam.bai"
+        sam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sam"
     shell:
         """
-        cd /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux
-        bwa-mem2 mem -t 8 {input.ref} {input.fq1} {input.fq2} \
-            | samtools view -u - \
-            | samtools sort -@ 8 -o {output.bam}
-        samtools index {output.bam}
+        /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux/bwa-mem2 \
+        mem -t 8 {input.ref} {input.fq1} {input.fq2} > {output.sam}
         """
