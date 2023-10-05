@@ -1,36 +1,44 @@
 # Define reference genome path
-reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/fasta/Homo_sapiens_assembly38_masked.fasta"
+reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/index/bwa-mem2/Homo_sapiens_assembly38_masked.fasta"
 
 # Define samples using glob_wildcards
-samples, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}.fastq.gz")
+samplesR, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sampleR}.fastq.gz")
 
 # Filter samples to exclude those with "I1" or "I2" in their names
-samples = [sample for sample in samples if "I1" not in sample and "I2" not in sample]
+samplesR = [sampleR for sampleR in samplesR if "I1" not in sampleR and "I2" not in sampleR]
+
+# Define samples using glob_wildcards
+samples_R1, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R1_001.fastq.gz")
+samples_R2, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2_001.fastq.gz")
 
 # List all the FastQC output files without wildcards
-fastqc_output_files = ["/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sample}_fastqc.zip".format(sample=sample) for sample in samples]
+fastqc_output_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.zip", sampleR=samplesR)
+
+multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html"
 
 # List all the BWA MEM output SAM files without wildcards
-bwa_output_bam_files = ["/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam".format(sample=sample) for sample in samples]
-
+bwa_output_bam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam", sample=samples_R1)
 
 rule all:
     input:
-        fastqc_zip = fastqc_output_files,
-        multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html",
-        bwa_bam = bwa_output_bam_files
+        fastqc_output_files,
+        multiqc_report,
+        bwa_output_bam_files
+
+    
 
 # Rule for quality control (FastQC):
 rule fastqc:
     input:
-        fq = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}.fastq.gz"
+        fq = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sampleR}.fastq.gz"
     output:
-        zip = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sample}_fastqc.zip",
-        html = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sample}_fastqc.html"
+        zip = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.zip",
+        html = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.html"
     shell:
         """
         echo "Input Fastq: {input.fq}"
-        fastqc -o /staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap {input.fq} 
+        fastqc -o /staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap {input.fq}
+        sleep 10  # Wait for 10 seconds
         """
 
 # Rule for generating MultiQC report
@@ -48,17 +56,18 @@ rule multiqc:
 # Rule for running BWA MEM2 alignment
 rule bwa_mem2:
     input:
-        fq1 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R1.fastq.gz",
-        fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2.fastq.gz",
+        report_files = multiqc_report,
+        fq1 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R1_001.fastq.gz",
+        fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2_001.fastq.gz",
         ref = reference
     output:
         bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam",
         bai = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam.bai"
     shell:
         """
-        /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux/bwa-mem2 -t 8 {input.ref} {input.fq1} {input.fq2} \
-            | samtools sort - \
-            > {output.bam}
+        cd /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux
+        bwa-mem2 mem -t 8 {input.ref} {input.fq1} {input.fq2} \
+            | samtools view -u - \
+            | samtools sort -@ 8 -o {output.bam}
         samtools index {output.bam}
         """
-
