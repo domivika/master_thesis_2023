@@ -16,14 +16,14 @@ fastqc_output_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_
 
 multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html"
 
-# List all the BWA MEM output SAM files without wildcards
-bwa_output_sam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sam", sample=samples_R1)
+# List all the BWA MEM output bam files without wildcards
+bwa_output_bam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam", sample=samples_R1)
 
 rule all:
     input:
         fastqc_output_files,
         multiqc_report,
-        bwa_output_sam_files
+        bwa_output_bam_files
 
     
 
@@ -34,11 +34,11 @@ rule fastqc:
     output:
         zip = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.zip",
         html = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.html"
+    threads: 1
     shell:
         """
         echo "Input Fastq: {input.fq}"
         fastqc -o /staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap {input.fq}
-        sleep 10  # Wait for 10 seconds
         """
 
 # Rule for generating MultiQC report
@@ -47,6 +47,7 @@ rule multiqc:
         report_files = fastqc_output_files
     output:
         html_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html"
+    threads: 1
     shell:
         """
         echo "Input Multiqc: {input.report_files}"
@@ -60,10 +61,10 @@ rule bwa_mem2:
         fq1 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R1_001.fastq.gz",
         fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2_001.fastq.gz",
         ref = reference
+    threads: 24
     output:
-        sam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sam"
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam"
     shell:
         """
-        /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux/bwa-mem2 \
-        mem -t 8 {input.ref} {input.fq1} {input.fq2} > {output.sam}
+        /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t {threads} {input.ref} {input.fq1} {input.fq2} | samtools view -Sb -> {output.bam}
         """
