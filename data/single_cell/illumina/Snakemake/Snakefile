@@ -19,11 +19,15 @@ multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.
 # List all the BWA MEM output bam files without wildcards
 bwa_output_bam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam", sample=samples_R1)
 
+# List all the samtools output bai files without wildcards
+samtools_output_bai_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam.bai", sample=samples_R1)
+
 rule all:
     input:
         fastqc_output_files,
         multiqc_report,
-        bwa_output_bam_files
+        bwa_output_bam_files,
+        samtools_output_bai_files
 
     
 
@@ -67,4 +71,18 @@ rule bwa_mem2:
     shell:
         """
         /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t {threads} {input.ref} {input.fq1} {input.fq2} | samtools view -Sb -> {output.bam}
+        """
+
+# Rule for sorting and indexing BAM files
+rule sort_and_index:
+    input:
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam"
+    output:
+        sorted_bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam",
+        bam_index = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam.bai"
+    threads: 24
+    shell:
+        """
+        samtools sort -@ {threads} -o {output.sorted_bam} {input.bam}
+        samtools index {output.sorted_bam} {output.bam_index}
         """
