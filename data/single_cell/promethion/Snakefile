@@ -1,0 +1,81 @@
+# Define reference genome path
+reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/index/bwa-mem2/Homo_sapiens_assembly38_masked.fasta"
+
+# Define samples using glob_wildcards
+samples, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R_basecalled/demux/{sample}.fastq.gz")
+
+
+# List all the FastQC output files
+fastqc_output_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap/{sample}_fastqc.zip", sample=samples)
+
+multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap/multiqc_report.html"
+
+# List all the BWA MEM output bam files
+bwa_output_bam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/bwa/{sample}.bam", sample=samples)
+
+# List all the samtools sort & index output bam.sorted.bai files
+samtools_sort_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/bwa/{sample}.sorted.bam.bai", sample=samples)
+
+rule all:
+    input:
+        fastqc_output_files,
+        multiqc_report,
+        bwa_output_bam_files,
+        samtools_sort_output
+
+
+# Rule for quality control (FastQC):
+rule fastqc:
+    input:
+        fq = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R_basecalled/demux/{sample}/{sample}.fastq.gz"
+    output:
+        zip = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap/{sample}/{sample}_fastqc.zip",
+        html = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap/{sample}/{sample}_fastqc.html"
+    threads: 24
+    shell:
+        """
+        echo "Input Fastq: {input.fq}"
+        fastqc -o "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap/{wildcards.sample}" {input.fq}
+        """
+
+
+# Rule for generating MultiQC report
+rule multiqc:
+    input:
+        report_files = fastqc_output_files
+    output:
+        html_report = multiqc_report
+    threads: 24
+    shell:
+        """
+        echo "Input Multiqc: {input.report_files}"
+        multiqc -f -o /staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap {input.report_files}
+        """
+
+# Rule for running BWA MEM2 alignment
+rule minimap2:
+    input:
+        report_files = multiqc_report,
+        fq = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R_basecalled/demux/{sample}/{sample}.fastq.gz",
+        ref = reference
+    threads: 24
+    output:
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/bwa/{sample}/{sample}.bam"
+    shell:
+        """
+        minimap2 -ax map-ont -t {threads} {input.ref} {input.fq} | samtools view -Sb -> {output.bam}
+        """
+
+# Rule for sorting and indexing BAM files
+rule sort_and_index:
+    input:
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/bwa/{sample}/{sample}.bam"
+    output:
+        sorted_bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/bwa/{sample}/{sample}.sorted.bam",
+        bam_index = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/bwa/{sample}/{sample}.sorted.bam.bai"
+    threads: 24
+    shell:
+        """
+        samtools sort -@ {threads} -o {output.sorted_bam} {input.bam}
+        samtools index {output.sorted_bam} {output.bam_index}
+        """

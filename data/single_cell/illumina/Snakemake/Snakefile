@@ -11,23 +11,34 @@ samplesR = [sampleR for sampleR in samplesR if "I1" not in sampleR and "I2" not 
 samples_R1, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R1_001.fastq.gz")
 samples_R2, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2_001.fastq.gz")
 
-# List all the FastQC output files without wildcards
+# Define lane samples from sortem bam files
+samples_L1, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L001.sorted.bam")
+samples_L2, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L002.sorted.bam")
+samples_L3, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L003.sorted.bam")
+samples_L4, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L004.sorted.bam")
+
+
+# List all the FastQC output files
 fastqc_output_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.zip", sampleR=samplesR)
 
 multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html"
 
-# List all the BWA MEM output bam files without wildcards
+# List all the BWA MEM output bam files
 bwa_output_bam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam", sample=samples_R1)
 
-# List all the samtools output bai files without wildcards
-samtools_output_bai_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam.bai", sample=samples_R1)
+# List all the samtools sort & index output bam.sorted.bai files
+samtools_sort_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam.bai", sample=samples_R1)
+
+# List all the samtools merge & index output merged.bam.vai files
+samtools_merge_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged.bam.bai", sampleL=samples_L1)
 
 rule all:
     input:
         fastqc_output_files,
         multiqc_report,
         bwa_output_bam_files,
-        samtools_output_bai_files
+        samtools_sort_output,
+        samtools_merge_output
 
     
 
@@ -85,4 +96,21 @@ rule sort_and_index:
         """
         samtools sort -@ {threads} -o {output.sorted_bam} {input.bam}
         samtools index {output.sorted_bam} {output.bam_index}
+        """
+
+# Rule for merging sorted BAM files
+rule merge_sorted_bam:
+    input:
+        bam_sorted_L1 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L001.sorted.bam",
+        bam_sorted_L2 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L002.sorted.bam",
+        bam_sorted_L3 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L003.sorted.bam",
+        bam_sorted_L4 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L004.sorted.bam"
+    output:
+        merged_bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged.bam",
+        merged_bai = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged.bam.bai"
+    threads: 24
+    shell:
+        """
+        samtools merge -@ {threads} {input.bam_sorted_L1} {input.bam_sorted_L2} {input.bam_sorted_L3} {input.bam_sorted_L4} -o {output.merged_bam}
+        samtools index {output.merged_bam} -o {output.merged_bai}
         """

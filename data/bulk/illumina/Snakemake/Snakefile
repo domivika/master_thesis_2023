@@ -27,7 +27,8 @@ rule all:
     input:
         fastqc_output_files,
         multiqc_report,
-        bwa_output_bam_files
+        bwa_output_bam_files,
+        samtools_output_bai_files
 
 # Rule for quality control (FastQC):
 rule fastqc:
