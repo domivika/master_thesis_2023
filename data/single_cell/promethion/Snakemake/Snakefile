@@ -5,7 +5,7 @@ reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/index/bw
 ref_transcriptome = "/staging/leuven/stg_00096/home/dkresa/data/reference/transcripts/gencode.v44.transcripts.fa"
 
 # Define annotation for a reference genome
-annotation = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/annotation/gencode.v43.basic.annotation.gtf.sorted.bed"
+annotation = "/staging/leuven/stg_00096/home/dkresa/data/reference/annotations/gencode.v44.basic.annotation.bed"
 
 # Define samples using glob_wildcards
 samples, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R_basecalled/demux/{sample}.fastq.gz")
@@ -78,7 +78,7 @@ rule minimap2:
         bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}/{sample}.bam"
     shell:
         """
-        minimap2 -ax splice --junc-bed {input.anno} -t {threads} {input.ref} {input.fq} | samtools view -Sb > {output.bam}
+        minimap2 -ax splice -uf -k14 --junc-bed {input.anno} -t {threads} {input.ref} {input.fq} | samtools view -Sb > {output.bam}
         """
 
 # Rule for sorting and indexing BAM files (genome)
