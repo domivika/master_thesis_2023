@@ -47,6 +47,9 @@ gvcf = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.Nov
 #List combined gvcf file
 cohort_gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/cohort.g.vcf.gz"
 
+#List joint genotyped vcf 
+vcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/vcf/cohort.vcf.gz"
+
 rule all:
     input:
         fastqc_output_files,
@@ -58,7 +61,8 @@ rule all:
         merged_bam_markdup_index,
         wgs_metrics,
         gvcf,
-        cohort_gvcf
+        cohort_gvcf,
+        vcf
 
     
 
@@ -203,4 +207,20 @@ rule combine_gvcfs:
         -R {input.ref} \
         -V {input.gvcf} \
         -O {output.cohort_gvcf}
+        """
+
+# Rule for joint genotyping
+rule joint_genotyping:
+    input:
+        cohort_gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/cohort.g.vcf.gz",
+        ref = reference
+    output:
+        vcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/vcf/cohort.vcf.gz"
+    threads: 24
+    shell:
+        """
+        gatk --java-options "-Xmx4g" GenotypeGVCFs \
+        -R {input.ref} \
+        -V {input.cohort_gvcf} \
+        -O {output.vcf}
         """
