@@ -32,13 +32,33 @@ samtools_sort_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single
 # List all the samtools merge & index output merged.bam.vai files
 samtools_merge_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged.bam.bai", sampleL=samples_L1)
 
+#List all the marked duplicates 
+merged_bam_markdup = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged_markdup.bam", sampleL=samples_L1)
+
+#List all indexes of marked duplicates 
+merged_bam_markdup_index = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged_markdup.bam.bai", sampleL=samples_L1)
+
+#List all the wgs_metrics of marked duplicates 
+wgs_metrics = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/2_postmap/{sampleL}_wgs_metrics.txt", sampleL=samples_L1)
+
+#List all haplotype called gvcf files
+gvcf = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/{sampleL}_merged_markdup.g.vcf.gz", sampleL=samples_L1)
+
+#List combined gvcf file
+cohort_gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/cohort.g.vcf.gz"
+
 rule all:
     input:
         fastqc_output_files,
         multiqc_report,
         bwa_output_bam_files,
         samtools_sort_output,
-        samtools_merge_output
+        samtools_merge_output,
+        merged_bam_markdup,
+        merged_bam_markdup_index,
+        wgs_metrics,
+        gvcf,
+        cohort_gvcf
 
     
 
@@ -113,4 +133,74 @@ rule merge_sorted_bam:
         """
         samtools merge -@ {threads} {input.bam_sorted_L1} {input.bam_sorted_L2} {input.bam_sorted_L3} {input.bam_sorted_L4} -o {output.merged_bam}
         samtools index {output.merged_bam} -o {output.merged_bai}
+        """
+
+# Rule for marking duplicates using sambamba markdup
+rule mark_duplicates:
+    input:
+        merged_bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged.bam"
+    output:
+        merged_bam_markdup = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged_markdup.bam",
+        merged_bam_markdup_index = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged_markdup.bam.bai"
+    threads: 24
+    shell:
+        """
+        sambamba markdup -p --nthreads {threads} {input.merged_bam} {output.merged_bam_markdup}
+        samtools index {output.merged_bam_markdup} {output.merged_bam_markdup_index}
+        """
+
+# Rule for quality control after mapping using picard
+rule postmap_QC:
+    input:
+        merged_bam_markdup = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged_markdup.bam",
+        ref = reference
+    output:
+        wgs_metrics = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/2_postmap/{sampleL}_wgs_metrics.txt",
+        alignment_summary_metrics = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/2_postmap/{sampleL}_alignment_summary_metrics.txt"
+
+    threads: 24
+    shell:
+        """
+        java -jar $EBROOTPICARD/picard.jar CollectWgsMetrics \
+        I={input.merged_bam_markdup} \
+        O={output.wgs_metrics} \
+        R={input.ref}
+
+        java -jar $EBROOTPICARD/picard.jar CollectAlignmentSummaryMetrics \
+        R={input.ref} \
+        I={input.merged_bam_markdup} \
+        O={output.alignment_summary_metrics}
+        """
+
+# Rule for haplotype calling
+rule haplotype_calling:
+    input:
+        merged_bam_markdup = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}_merged_markdup.bam",
+        ref = reference
+    output:
+        gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/{sampleL}_merged_markdup.g.vcf.gz"
+    threads: 24
+    shell:
+        """
+        gatk --java-options "-Xmx4g" HaplotypeCaller  \
+        -R {input.ref} \
+        -I {input.merged_bam_markdup} \
+        -O {output.gvcf} \
+        -ERC GVCF
+        """
+
+# Rule for GVCFs combining
+rule combine_gvcfs:
+    input:
+        gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/{sampleL}_merged_markdup.g.vcf.gz",
+        ref = reference
+    output:
+        cohort_gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/cohort.g.vcf.gz"
+    threads: 24
+    shell:
+        """
+        gatk --java-options "-Xmx4g" CombineGVCFs \
+        -R {input.ref} \
+        -V {input.gvcf} \
+        -O {output.cohort_gvcf}
         """

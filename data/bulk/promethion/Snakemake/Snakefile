@@ -1,13 +1,14 @@
 
 # Output
-basecalled_fastq = "/staging/leuven/stg_00096/home/dkresa/data/bulk/1694205563_gc-run-230905-promethion1-fc1d/basecalled/bam/1694205563_basecalled.bam"
-
+basecalled_bam = "/staging/leuven/stg_00096/home/dkresa/data/bulk/1694205563_gc-run-230905-promethion1-fc1d/basecalled/bam/1694205563_basecalled.bam"
+demux_bams = "/staging/leuven/stg_00096/home/dkresa/data/bulk/1694205563_gc-run-230905-promethion1-fc1d/basecalled/demux/"
 
 rule all:
     input:
-        basecalled_fastq
+        basecalled_bam,
+        demux_bams
 
-# Rule for basecalling in dorado (pod5 -> fastq)
+# Rule for basecalling in dorado
 rule dorado_basecall:
     input:
         pod5 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/bulk/1694205563_gc-run-230905-promethion1-fc1d/pod5_pass/"
@@ -19,5 +20,25 @@ rule dorado_basecall:
         singularity run --nv -B /staging/leuven/stg_00096/home/dkresa \
         -B /lustre1/project/stg_00096/data/2023_ResolveOME_RPMI4802/bulk/1694205563_gc-run-230905-promethion1-fc1d \
         /staging/leuven/stg_00096/home/dkresa/singularity/dorado_v0.4.1.sif \
-        /opt/dorado/bin/dorado basecaller /opt/dorado/bin/dna_r10.4.1_e8.2_400bps_sup@v4.2.0 {input.pod5} > {output.bam}
+        /opt/dorado/bin/dorado basecaller \
+        /opt/dorado/bin/dna_r10.4.1_e8.2_400bps_sup@v4.2.0 {input.pod5} \
+        --kit-name SQK-NBD114-24 \
+        > {output.bam}
+        """
+
+# Rule for demultiplexing in dorado
+rule dorado_demux:
+    input:
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/bulk/1694205563_gc-run-230905-promethion1-fc1d/basecalled/bam/1694205563_basecalled.bam"
+    output:
+        demux = "/staging/leuven/stg_00096/home/dkresa/data/bulk/1694205563_gc-run-230905-promethion1-fc1d/basecalled/demux/"
+    threads: 24
+    shell:
+        """
+        singularity run --nv -B /staging/leuven/stg_00096/home/dkresa \
+        -B /staging/leuven/stg_00096/home/dkresa/data/bulk/1694205563_gc-run-230905-promethion1-fc1d \
+        /staging/leuven/stg_00096/home/dkresa/singularity/dorado_v0.4.1.sif \
+        /opt/dorado/bin/dorado demux \
+        --output-dir {output.demux} \
+        --no-classify {input.bam}
         """
