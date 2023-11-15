@@ -1,86 +1,76 @@
-import os
-
-# Define reference genome path
+# Define paths to references
 reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/index/bwa-mem2/Homo_sapiens_assembly38_masked.fasta"
+known_sites = "/staging/leuven/stg_00096/home/dkresa/data/reference/annotations/dbsnp_grch38.vcf.gz"
 
-# Define samples using glob_wildcards
-samplesR, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sampleR}.fastq.gz")
+# Define global wildcards
+files = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R{r}_001.fastq.gz")
+fq1 = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R1_001.fastq.gz")
+fq2 = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R2_001.fastq.gz")
 
-# Filter samples to exclude those with "I1" or "I2" in their names
-samplesR = [sampleR for sampleR in samplesR if "I1" not in sampleR and "I2" not in sampleR]
 
-# Define samples using glob_wildcards
-samples_R1, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R1_001.fastq.gz")
-samples_R2, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2_001.fastq.gz")
+# Define output files
+fastqc_output = expand("QC/1_premap/fastqc/{sample}_L00{l}_R{r}_001_fastqc.html", zip, sample=files.sample, l=files.l, r=files.r)
+multiqc_output = "QC/1_premap/multiqc/multiqc_report.html"
+bwa_mem2_output = expand("raw_bams/{sample}_L00{l}.bam", zip, sample=files.sample, l=files.l)
+sort_and_index_output = expand("raw_bams/{sample}_L00{l}.sorted.bam", zip, sample=files.sample, l=files.l)
+mark_duplicates_output = expand("raw_bams/{sample}_L00{l}.sorted.marked.bam", zip, sample=files.sample, l=files.l)
+base_recalibrator_output = expand("QC/2_postmap/{sample}_L00{l}.recal_data.table", zip, sample=files.sample, l=files.l)
+merge_sorted_bam_output = expand("bam/{sample}.bam", sample=files.sample)
+haplotype_calling_output = expand("gvcf/{sample}.g.vcf.gz", sample=files.sample)
+combine_gvcfs_output = expand("gvcf/cohort.g.vcf.gz")
+joint_genotyping_output = expand("vcf/cohort.vcf")
 
-# Define samples based on a lane
-samples_L1, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L001.sorted.markdup.bam")
-samples_L2, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L002.sorted.markdup.bam")
-samples_L3, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L003.sorted.markdup.bam")
-samples_L4, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L004.sorted.markdup.bam")
-
-# List output files
-fastqc_output_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.zip", sampleR=samplesR)
-multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html"
-bams = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam", sample=samples_R1)
-bam_sorted = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam.bai", sample=samples_R1)
-bam_markdup = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.markdup.bam.bai", sample=samples_R1)
-bam_merged = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam_merged/{sampleL}.bam.bai", sampleL=samples_L1)
-wgs_metrics = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/2_postmap/{sampleL}_wgs_metrics.txt", sampleL=samples_L1)
-alignment_summary_metrics = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/2_postmap/{sampleL}_alignment_summary_metrics.txt", sampleL=samples_L1)
-gvcf = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/{sampleL}.g.vcf", sampleL=samples_L1)
-cohort_gvcf = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/cohort.g.vcf", sampleL=samples_L1)
-vcf = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/vcf/cohort.vcf", sampleL=samples_L1)
 
 rule all:
     input:
-        bams,
-        bam_sorted,
-        bam_markdup,
-        bam_merged,
-        wgs_metrics,
-        alignment_summary_metrics,
-        gvcf,
-        cohort_gvcf,
-        vcf
-        
+        fastqc_output,
+        multiqc_output,
+        bwa_mem2_output,
+        sort_and_index_output,
+        mark_duplicates_output,
+        base_recalibrator_output,
+        merge_sorted_bam_output,
+        haplotype_calling_output,
+        combine_gvcfs_output,
+        joint_genotyping_output
+
+
 # Rule for quality control (FastQC):
 rule fastqc:
     input:
-        fq = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sampleR}.fastq.gz"
+        fq = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R{r}_001.fastq.gz"
     output:
-        zip = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.zip",
-        html = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/{sampleR}_fastqc.html"
+        zip = "QC/1_premap/fastqc/{sample}_L00{l}_R{r}_001_fastqc.zip",
+        html = "QC/1_premap/fastqc/{sample}_L00{l}_R{r}_001_fastqc.html"
     threads: 1
     shell:
         """
         echo "Input Fastq: {input.fq}"
-        fastqc -o /staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap {input.fq}
+        fastqc -o QC/1_premap/fastqc {input.fq}
         """
 
 # Rule for generating MultiQC report
 rule multiqc:
     input:
-        report_files = fastqc_output_files
+        report_files = fastqc_output
     output:
-        html_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap/multiqc_report.html"
-    threads: 1
+        html_report = "QC/1_premap/multiqc/multiqc_report.html"
+    threads: 24
     shell:
         """
-        echo "Input Multiqc: {input.report_files}"
-        multiqc -f -o /staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/1_premap {input.report_files}
+        multiqc QC/1_premap/fastqc -o QC/1_premap/multiqc
         """
 
 # Rule for BWA MEM2 alignment
 rule bwa_mem2:
     input:
-        fq1 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R1_001.fastq.gz",
-        fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_R2_001.fastq.gz",
+        fq1 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R1_001.fastq.gz",
+        fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R2_001.fastq.gz",
         ref = reference,
-        report_files = multiqc_report
+        report_files = multiqc_output 
     threads: 24
     output:
-        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam"
+        bam = "raw_bams/{sample}_L00{l}.bam"
     shell:
         """
         /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem \
@@ -94,10 +84,10 @@ rule bwa_mem2:
 # Rule for sorting and indexing BAM files
 rule sort_and_index:
     input:
-        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.bam"
+        bam = bwa_mem2_output
     output:
-        sorted_bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam",
-        bam_index = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam.bai"
+        sorted_bam = "raw_bams/{sample}_L00{l}.sorted.bam",
+        bam_index = "raw_bams/{sample}_L00{l}.sorted.bam.bai"
     threads: 24
     shell:
         """
@@ -105,32 +95,49 @@ rule sort_and_index:
         samtools index {output.sorted_bam} {output.bam_index}
         """
 
-# Rule for marking duplicates using MarkDuplicates
+# Rule for marking duplicates
 rule mark_duplicates:
     input:
-        sorted_bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.bam"
+        bam = sort_and_index_output
     output:
-        bam_markdup = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.markdup.bam",
-        bam_markdup_index = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sample}.sorted.markdup.bam.bai"
+        marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam"
     threads: 24
     shell:
         """
-        java -jar $EBROOTPICARD/picard.jar MarkDuplicates \
-        INPUT={input.sorted_bam} \
-        OUTPUT={output.bam_markdup} \
-        METRICS_FILE={output.bam_markdup}.metrics.txt
+        gatk MarkDuplicatesSpark \
+        I={input.bam} \
+        O={output.marked_bam}
+        """
+
+# Rule for base quality score recalibration
+rule base_recalibrator:
+    input:
+        marked_bam = mark_duplicates_output,
+        ref = reference,
+        dbsnp = known_sites
+    output:
+        data_table = "QC/2_postmap/{sample}_L00{l}.recal_data.table"
+    threads: 24
+    shell:
+        """
+        gatk BaseRecalibrator \
+        -I {input.marked_bam} \
+        -R {input.ref} \
+        --known-sites {input.dbsnp} \
+        -O {output.data_table}
         """
 
 # Rule for merging sorted BAM files by lanes
 rule merge_sorted_bam:
     input:
-        bam_sorted_L1 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L001.sorted.markdup.bam",
-        bam_sorted_L2 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L002.sorted.markdup.bam",
-        bam_sorted_L3 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L003.sorted.markdup.bam",
-        bam_sorted_L4 = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bwa/{sampleL}_L004.sorted.markdup.bam"
+        markdup_bam = mark_duplicates_output,
+        bam_sorted_L1 = "raw_bams/{sample}_L001.sorted.marked.bam",
+        bam_sorted_L2 = "raw_bams/{sample}_L002.sorted.marked.bam",
+        bam_sorted_L3 = "raw_bams/{sample}_L003.sorted.marked.bam",
+        bam_sorted_L4 = "raw_bams/{sample}_L004.sorted.marked.bam"
     output:
-        merged_bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam/{sampleL}.bam",
-        merged_bai = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam/{sampleL}.bam.bai"
+        merged_bam = "bam/{sample}.bam",
+        merged_bai = "bam/{sample}.bam.bai"
     threads: 24
     shell:
         """
@@ -138,83 +145,51 @@ rule merge_sorted_bam:
         samtools index {output.merged_bam} -o {output.merged_bai}
         """
 
-# Rule for quality control after mapping using picard CollectWgsMetrics
-rule CollectWgsMetrics:
-    input:
-        bam_markdup = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam/{sampleL}.bam",
-        ref = reference
-    output:
-        wgs_metrics = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/2_postmap/{sampleL}_wgs_metrics.txt"
-    threads: 1
-    shell:
-        """
-        java -jar $EBROOTPICARD/picard.jar CollectWgsMetrics \
-        I={input.bam_markdup} \
-        O={output.wgs_metrics} \
-        R={input.ref}
-        """
-
-# Rule for quality control after mapping using picard CollectAlignmentSummaryMetrics
-rule CollectAlignmentSummaryMetrics:
-    input:
-        bam_markdup = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam/{sampleL}.bam",
-        ref = reference
-    output:
-        alignment_summary_metrics = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/QC/2_postmap/{sampleL}_alignment_summary_metrics.txt"
-    threads: 1
-    shell:
-        """
-        java -jar $EBROOTPICARD/picard.jar CollectAlignmentSummaryMetrics \
-        I={input.bam_markdup} \
-        O={output.alignment_summary_metrics} \
-        R={input.ref}
-        """
-
 # Rule for haplotype calling
 rule haplotype_calling:
     input:
         ref = reference,
-        bam_markdup = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/bam/{sampleL}.bam"
+        merged_bam = merge_sorted_bam_output
     output:
-        gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/{sampleL}.g.vcf"
+        gvcfs = "gvcf/{sample}.g.vcf.gz"
     threads: 24
     shell:
         """
         gatk --java-options "-Xmx4g" HaplotypeCaller  \
         -R {input.ref} \
-        -I {input.bam_markdup} \
-        -O {output.gvcf} \
+        -I {input.merged_bam} \
+        -O {output.gvcfs} \
         -ERC GVCF
         """
 
 # Rule for GVCFs combining
 rule combine_gvcfs:
     input:
-        gvcf = gvcf,
+        gvcfs = haplotype_calling_output,
         ref = reference
     output:
-        cohort_gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/cohort.g.vcf"
+        merged_gvcfs = "gvcf/cohort.g.vcf.gz"
     threads: 24
     shell:
         """
         gatk --java-options "-Xmx4g" CombineGVCFs \
+        --variant {input.gvcfs} \
         -R {input.ref} \
-        -V {input.gvcf} \
-        -O {output.cohort_gvcf}
+        -O {output.merged_gvcfs}
         """
 
 # Rule for joint genotyping
 rule joint_genotyping:
     input:
-        cohort_gvcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/gvcf/cohort.g.vcf",
+        merged_gvcfs = combine_gvcfs_output,
         ref = reference
     output:
-        vcf = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/vcf/cohort.vcf"
+        merged_vcf = "vcf/cohort.vcf"
     threads: 24
     shell:
         """
         gatk --java-options "-Xmx4g" GenotypeGVCFs \
         -R {input.ref} \
-        -V {input.cohort_gvcf} \
-        -O {output.vcf}
+        -V {input.merged_gvcfs} \
+        -O {output.merged_vcf}
         """
