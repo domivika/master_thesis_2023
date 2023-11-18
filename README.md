@@ -1,6 +1,6 @@
 # master_thesis_2023
 Load the packages:
-- conda activate thesis #snakemake; sambamba; multiqc
+- conda activate thesis #snakemake; sambamba; multiqc; fastqc; picard; gatk; samtools
 - module load FastQC
 - module load SAMtools
 - module load minimap2
