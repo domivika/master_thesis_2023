@@ -15,10 +15,23 @@ bwa_mem2_output = expand("raw_bams/{sample}_L00{l}.bam", zip, sample=files.sampl
 sort_and_index_output = expand("raw_bams/{sample}_L00{l}.sorted.bam", zip, sample=files.sample, l=files.l)
 mark_duplicates_output = expand("raw_bams/{sample}_L00{l}.sorted.marked.bam", zip, sample=files.sample, l=files.l)
 base_recalibrator_output = expand("QC/2_postmap/{sample}_L00{l}.recal_data.table", zip, sample=files.sample, l=files.l)
+gather_bqsr_output = "QC/2_postmap/cohort.recal_data.table"
+apply_bqsr_output = expand("raw_bams/{sample}_L00{l}.sorted.marked.recal.bam", zip, sample=files.sample, l=files.l)
 merge_sorted_bam_output = expand("bam/{sample}.bam", sample=files.sample)
 haplotype_calling_output = expand("gvcf/{sample}.g.vcf.gz", sample=files.sample)
-combine_gvcfs_output = expand("gvcf/cohort.g.vcf.gz")
-joint_genotyping_output = expand("vcf/cohort.vcf")
+combine_gvcfs_output = "gvcf/cohort.g.vcf.gz"
+joint_genotyping_output = "vcf/cohort.vcf"
+
+# Define output reports
+sort_and_index_report = expand("raw_bams/reports/sort_and_index/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+mark_duplicates_report = expand("raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+base_recalibrator_report = expand("QC/2_postmap/reports/base_recalibrator/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+gather_bqsr_reports = "QC/2_postmap/reports/gather_bqsr_reports.txt"
+apply_bqsr_report = expand("raw_bams/reports/apply_bqsr/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+merge_sorted_bam_report = expand("bam/reports/merge_sorted_bam/{sample}.txt", sample=files.sample)
+haplotype_calling_report = expand("gvcf/reports/haplotype_calling/{sample}.txt", sample=files.sample)
+combine_gvcfs_report = "gvcf/reports/combine_gvcfs.txt"
+joint_genotyping_report = "vcf/reports/joint_genotyping.txt"
 
 
 rule all:
@@ -84,39 +97,50 @@ rule bwa_mem2:
 # Rule for sorting and indexing BAM files
 rule sort_and_index:
     input:
-        bam = bwa_mem2_output
+        bam = "raw_bams/{sample}_L00{l}.bam"
     output:
         sorted_bam = "raw_bams/{sample}_L00{l}.sorted.bam",
-        bam_index = "raw_bams/{sample}_L00{l}.sorted.bam.bai"
+        bam_index = "raw_bams/{sample}_L00{l}.sorted.bam.bai",
+        task_done = "raw_bams/reports/sort_and_index/{sample}_L00{l}.txt"
     threads: 24
     shell:
         """
         samtools sort -@ {threads} -o {output.sorted_bam} {input.bam}
         samtools index {output.sorted_bam} {output.bam_index}
+
+        touch {output.task_done}
         """
 
 # Rule for marking duplicates
 rule mark_duplicates:
     input:
-        bam = sort_and_index_output
+        bam = "raw_bams/{sample}_L00{l}.sorted.bam",
+        check_input = "raw_bams/reports/sort_and_index/{sample}_L00{l}.txt"
     output:
-        marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam"
+        marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
+        task_done = "raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt"
     threads: 24
     shell:
-        """
-        gatk MarkDuplicatesSpark \
+        """        
+        java -jar $EBROOTPICARD/picard.jar MarkDuplicates \
         I={input.bam} \
-        O={output.marked_bam}
+        O={output.marked_bam} \
+        M={output.marked_bam}.metrics.txt \
+        "VALIDATION_STRINGENCY=LENIENT"
+
+        touch {output.task_done}
         """
 
 # Rule for base quality score recalibration
 rule base_recalibrator:
     input:
-        marked_bam = mark_duplicates_output,
+        marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
         ref = reference,
-        dbsnp = known_sites
+        dbsnp = known_sites,
+        check_input = "raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt"
     output:
-        data_table = "QC/2_postmap/{sample}_L00{l}.recal_data.table"
+        data_table = "QC/2_postmap/{sample}_L00{l}.recal_data.table",
+        task_done = "QC/2_postmap/reports/base_recalibrator/{sample}_L00{l}.txt"
     threads: 24
     shell:
         """
@@ -125,50 +149,103 @@ rule base_recalibrator:
         -R {input.ref} \
         --known-sites {input.dbsnp} \
         -O {output.data_table}
+
+        touch {output.task_done}
+        """
+
+# Rule for gathering base quality score recalibration reports
+rule gather_bqsr:
+    input:
+        recalibration_tables = base_recalibrator_output
+    output:
+        gathered_recalibration_table = "QC/2_postmap/cohort.recal_data.table",
+        task_done = "QC/2_postmap/reports/gather_bqsr_reports.txt"
+    shell:
+        """
+        gatk GatherBqsrReports \
+        -I {input.recalibration_tables} \
+        -O {output.gathered_recalibration_table}
+        
+        touch {output.task_done}
+        """
+
+# Rule for applying base quality score recalibration
+rule apply_bqsr:
+    input:
+        marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
+        recalibration_table = "QC/2_postmap/cohort.recal_data.table",
+        ref = reference,
+        check_input = "QC/2_postmap/reports/gather_bqsr_reports.txt"
+    output:
+        output_bam = "raw_bams/{sample}_L00{l}.sorted.marked.recal.bam",
+        task_done = "raw_bams/reports/apply_bqsr/{sample}_L00{l}.txt"
+    threads: 24
+    shell:
+        """
+        gatk ApplyBQSR \
+        -R reference.fasta \
+        -I {input.marked_bam} \
+        --bqsr-recal-file {input.recalibration_table} \
+        -O {output.bam}
+
+        touch {output.task_done}
         """
 
 # Rule for merging sorted BAM files by lanes
 rule merge_sorted_bam:
     input:
-        markdup_bam = mark_duplicates_output,
-        bam_sorted_L1 = "raw_bams/{sample}_L001.sorted.marked.bam",
-        bam_sorted_L2 = "raw_bams/{sample}_L002.sorted.marked.bam",
-        bam_sorted_L3 = "raw_bams/{sample}_L003.sorted.marked.bam",
-        bam_sorted_L4 = "raw_bams/{sample}_L004.sorted.marked.bam"
+        bam_sorted_L1 = "raw_bams/{sample}_L001.sorted.marked.recal.bam",
+        bam_sorted_L2 = "raw_bams/{sample}_L002.sorted.marked.recal.bam",
+        bam_sorted_L3 = "raw_bams/{sample}_L003.sorted.marked.recal.bam",
+        bam_sorted_L4 = "raw_bams/{sample}_L004.sorted.marked.recal.bam",
+        report_L1 = "raw_bams/reports/apply_bqsr/{sample}_L001.txt",
+        report_L2 = "raw_bams/reports/apply_bqsr/{sample}_L002.txt",
+        report_L3 = "raw_bams/reports/apply_bqsr/{sample}_L003.txt",
+        report_L4 = "raw_bams/reports/apply_bqsr/{sample}_L004.txt"
     output:
         merged_bam = "bam/{sample}.bam",
-        merged_bai = "bam/{sample}.bam.bai"
+        merged_bai = "bam/{sample}.bam.bai",
+        task_done = "bam/reports/merge_sorted_bam/{sample}.txt"
     threads: 24
     shell:
         """
         samtools merge -@ {threads} {input.bam_sorted_L1} {input.bam_sorted_L2} {input.bam_sorted_L3} {input.bam_sorted_L4} -o {output.merged_bam}
         samtools index {output.merged_bam} -o {output.merged_bai}
+
+        touch {output.task_done}
         """
 
 # Rule for haplotype calling
 rule haplotype_calling:
     input:
         ref = reference,
-        merged_bam = merge_sorted_bam_output
+        merged_bam = "bam/{sample}.bam",
+        check_input = "bam/reports/merge_sorted_bam/{sample}.txt"
+        
     output:
-        gvcfs = "gvcf/{sample}.g.vcf.gz"
+        gvcfs = "gvcf/{sample}.g.vcf.gz",
+        task_done = "gvcf/reports/haplotype_calling/{sample}.txt"
     threads: 24
     shell:
         """
-        gatk --java-options "-Xmx4g" HaplotypeCaller  \
+        gatk --java-options "-Xmx4g" HaplotypeCaller \
         -R {input.ref} \
         -I {input.merged_bam} \
         -O {output.gvcfs} \
         -ERC GVCF
+
+        touch {output.task_done}
         """
 
 # Rule for GVCFs combining
 rule combine_gvcfs:
     input:
         gvcfs = haplotype_calling_output,
-        ref = reference
+        ref = reference,
+        check_input = haplotype_calling_report
     output:
-        merged_gvcfs = "gvcf/cohort.g.vcf.gz"
+        merged_gvcfs = "gvcf/cohort.g.vcf.gz",
+        task_done = "gvcf/reports/combine_gvcfs.txt"
     threads: 24
     shell:
         """
@@ -176,15 +253,19 @@ rule combine_gvcfs:
         --variant {input.gvcfs} \
         -R {input.ref} \
         -O {output.merged_gvcfs}
+
+        touch {output.task_done}
         """
 
 # Rule for joint genotyping
 rule joint_genotyping:
     input:
         merged_gvcfs = combine_gvcfs_output,
-        ref = reference
+        ref = reference,
+        check_input = "gvcf/reports/combine_gvcfs.txt"
     output:
-        merged_vcf = "vcf/cohort.vcf"
+        merged_vcf = "vcf/cohort.vcf",
+        task_done = "vcf/reports/joint_genotyping.txt"
     threads: 24
     shell:
         """
@@ -192,4 +273,6 @@ rule joint_genotyping:
         -R {input.ref} \
         -V {input.merged_gvcfs} \
         -O {output.merged_vcf}
+
+        touch {output.task_done}
         """
