@@ -26,7 +26,7 @@ joint_genotyping_output = "vcf/cohort.vcf"
 sort_and_index_report = expand("raw_bams/reports/sort_and_index/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 mark_duplicates_report = expand("raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 base_recalibrator_report = expand("QC/2_postmap/reports/base_recalibrator/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
-gather_bqsr_reports = "QC/2_postmap/reports/gather_bqsr_reports.txt"
+gather_bqsr_report = "QC/2_postmap/reports/gather_bqsr_reports.txt"
 apply_bqsr_report = expand("raw_bams/reports/apply_bqsr/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 merge_sorted_bam_report = expand("bam/reports/merge_sorted_bam/{sample}.txt", sample=files.sample)
 haplotype_calling_report = expand("gvcf/reports/haplotype_calling/{sample}.txt", sample=files.sample)
@@ -40,12 +40,23 @@ rule all:
         multiqc_output,
         bwa_mem2_output,
         sort_and_index_output,
+        sort_and_index_report,
         mark_duplicates_output,
+        mark_duplicates_report,
         base_recalibrator_output,
+        base_recalibrator_report,
+        gather_bqsr_output,
+        gather_bqsr_report,
+        apply_bqsr_output,
+        apply_bqsr_report,
         merge_sorted_bam_output,
+        merge_sorted_bam_report,
         haplotype_calling_output,
+        haplotype_calling_report,
         combine_gvcfs_output,
-        joint_genotyping_output
+        combine_gvcfs_report,
+        joint_genotyping_output,
+        joint_genotyping_report
 
 
 # Rule for quality control (FastQC):
@@ -115,7 +126,7 @@ rule sort_and_index:
 rule mark_duplicates:
     input:
         bam = "raw_bams/{sample}_L00{l}.sorted.bam",
-        check_input = "raw_bams/reports/sort_and_index/{sample}_L00{l}.txt"
+        check_input = sort_and_index_report
     output:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
         task_done = "raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt"
@@ -137,7 +148,7 @@ rule base_recalibrator:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
         ref = reference,
         dbsnp = known_sites,
-        check_input = "raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt"
+        check_input = mark_duplicates_report
     output:
         data_table = "QC/2_postmap/{sample}_L00{l}.recal_data.table",
         task_done = "QC/2_postmap/reports/base_recalibrator/{sample}_L00{l}.txt"
@@ -156,7 +167,8 @@ rule base_recalibrator:
 # Rule for gathering base quality score recalibration reports
 rule gather_bqsr:
     input:
-        recalibration_tables = base_recalibrator_output
+        recalibration_tables = base_recalibrator_output,
+        check_input = base_recalibrator_report
     output:
         gathered_recalibration_table = "QC/2_postmap/cohort.recal_data.table",
         task_done = "QC/2_postmap/reports/gather_bqsr_reports.txt"
@@ -175,7 +187,7 @@ rule apply_bqsr:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
         recalibration_table = "QC/2_postmap/cohort.recal_data.table",
         ref = reference,
-        check_input = "QC/2_postmap/reports/gather_bqsr_reports.txt"
+        check_input = gather_bqsr_report
     output:
         output_bam = "raw_bams/{sample}_L00{l}.sorted.marked.recal.bam",
         task_done = "raw_bams/reports/apply_bqsr/{sample}_L00{l}.txt"
@@ -220,7 +232,7 @@ rule haplotype_calling:
     input:
         ref = reference,
         merged_bam = "bam/{sample}.bam",
-        check_input = "bam/reports/merge_sorted_bam/{sample}.txt"
+        check_input = merge_sorted_bam_report
         
     output:
         gvcfs = "gvcf/{sample}.g.vcf.gz",
@@ -262,7 +274,7 @@ rule joint_genotyping:
     input:
         merged_gvcfs = combine_gvcfs_output,
         ref = reference,
-        check_input = "gvcf/reports/combine_gvcfs.txt"
+        check_input = combine_gvcfs_report
     output:
         merged_vcf = "vcf/cohort.vcf",
         task_done = "vcf/reports/joint_genotyping.txt"
