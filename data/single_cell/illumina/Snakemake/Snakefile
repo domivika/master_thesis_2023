@@ -1,6 +1,10 @@
-# Define paths to references
+# Define paths to references and directories
 reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/index/bwa-mem2/Homo_sapiens_assembly38_masked.fasta"
-known_sites = "/staging/leuven/stg_00096/home/dkresa/data/reference/annotations/dbsnp_grch38.vcf.gz"
+known_sites = "/staging/leuven/stg_00096/references/GRCh38.alt-masked-V2/annotation/snv_indel/gnomAD_v3.1.2/small-gnomad-common-GRCexcl.genomes.v3.1.2.sites.all.vcf.bgz"
+GATK_path = "/staging/leuven/stg_00096/software/singularity/gatk_4.2.6.1.sif"
+work_dir = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277"
+stage_dir = "/staging/leuven/stg_00096"
+lustre_dir = "/lustre1/project/stg_00096"
 
 # Define global wildcards
 files = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R{r}_001.fastq.gz")
@@ -12,22 +16,23 @@ fq2 = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_ce
 fastqc_output = expand("QC/1_premap/fastqc/{sample}_L00{l}_R{r}_001_fastqc.html", zip, sample=files.sample, l=files.l, r=files.r)
 multiqc_output = "QC/1_premap/multiqc/multiqc_report.html"
 bwa_mem2_output = expand("raw_bams/{sample}_L00{l}.bam", zip, sample=files.sample, l=files.l)
-sort_and_index_output = expand("raw_bams/{sample}_L00{l}.sorted.bam", zip, sample=files.sample, l=files.l)
+sort_bam_files_output = expand("raw_bams/{sample}_L00{l}.sorted.bam", zip, sample=files.sample, l=files.l)
 mark_duplicates_output = expand("raw_bams/{sample}_L00{l}.sorted.marked.bam", zip, sample=files.sample, l=files.l)
-base_recalibrator_output = expand("QC/2_postmap/{sample}_L00{l}.recal_data.table", zip, sample=files.sample, l=files.l)
-gather_bqsr_output = "QC/2_postmap/cohort.recal_data.table"
-apply_bqsr_output = expand("raw_bams/{sample}_L00{l}.sorted.marked.recal.bam", zip, sample=files.sample, l=files.l)
+base_recalibrator_output = expand("recalibrated/{sample}_L00{l}.recal_data.table", zip, sample=files.sample, l=files.l)
+gather_bqsr_output = "recalibrated/cohort.recal_data.table"
+apply_bqsr_output = expand("recalibrated/{sample}_L00{l}.sorted.marked.recal.bam", zip, sample=files.sample, l=files.l)
 merge_sorted_bam_output = expand("bam/{sample}.bam", sample=files.sample)
 haplotype_calling_output = expand("gvcf/{sample}.g.vcf.gz", sample=files.sample)
 combine_gvcfs_output = "gvcf/cohort.g.vcf.gz"
 joint_genotyping_output = "vcf/cohort.vcf"
 
 # Define output reports
-sort_and_index_report = expand("raw_bams/reports/sort_and_index/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+bwa_mem2_report = expand("raw_bams/reports/bwa_mem2/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+sort_bam_files_report = expand("raw_bams/reports/sort_bam_files/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 mark_duplicates_report = expand("raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
-base_recalibrator_report = expand("QC/2_postmap/reports/base_recalibrator/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
-gather_bqsr_report = "QC/2_postmap/reports/gather_bqsr_reports.txt"
-apply_bqsr_report = expand("raw_bams/reports/apply_bqsr/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+base_recalibrator_report = expand("recalibrated/reports/base_recalibrator/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
+gather_bqsr_report = "recalibrated/reports/gather_bqsr_reports.txt"
+apply_bqsr_report = expand("recalibrated/reports/apply_bqsr/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 merge_sorted_bam_report = expand("bam/reports/merge_sorted_bam/{sample}.txt", sample=files.sample)
 haplotype_calling_report = expand("gvcf/reports/haplotype_calling/{sample}.txt", sample=files.sample)
 combine_gvcfs_report = "gvcf/reports/combine_gvcfs.txt"
@@ -39,8 +44,9 @@ rule all:
         fastqc_output,
         multiqc_output,
         bwa_mem2_output,
-        sort_and_index_output,
-        sort_and_index_report,
+        bwa_mem2_report,
+        sort_bam_files_output,
+        sort_bam_files_report,
         mark_duplicates_output,
         mark_duplicates_report,
         base_recalibrator_output,
@@ -91,33 +97,38 @@ rule bwa_mem2:
         fq1 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R1_001.fastq.gz",
         fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R2_001.fastq.gz",
         ref = reference,
-        report_files = multiqc_output 
+        report_files = multiqc_output
     threads: 24
     output:
-        bam = "raw_bams/{sample}_L00{l}.bam"
+        bam = "raw_bams/{sample}_L00{l}.bam",
+        task_done = "raw_bams/reports/bwa_mem2/{sample}_L00{l}.txt"
     shell:
         """
         /lustre1/project/stg_00096/software/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem \
         -t {threads} \
         -M \
-        -R "@RG\tID:{wildcards.sample}\tPL:ILLUMINA\tSM:{wildcards.sample}" {input.ref} \
+        -R "@RG\\tID:{wildcards.sample}\\tPL:ILLUMINA\\tSM:{wildcards.sample}" {input.ref} \
         {input.fq1} {input.fq2} \
         | samtools view -Sb -> {output.bam}
+
+        touch {output.task_done}
         """
 
-# Rule for sorting and indexing BAM files
-rule sort_and_index:
+# Rule for sorting BAM files by queryname
+rule sort_bam_files:
     input:
-        bam = "raw_bams/{sample}_L00{l}.bam"
+        bam = "raw_bams/{sample}_L00{l}.bam",
+        check_input = bwa_mem2_report
     output:
         sorted_bam = "raw_bams/{sample}_L00{l}.sorted.bam",
-        bam_index = "raw_bams/{sample}_L00{l}.sorted.bam.bai",
-        task_done = "raw_bams/reports/sort_and_index/{sample}_L00{l}.txt"
+        task_done = "raw_bams/reports/sort_bam_files/{sample}_L00{l}.txt"
     threads: 24
     shell:
         """
-        samtools sort -@ {threads} -o {output.sorted_bam} {input.bam}
-        samtools index {output.sorted_bam} {output.bam_index}
+        java -jar $EBROOTPICARD/picard.jar SortSam \
+        -I {input.bam} \
+        -O {output.sorted_bam} \
+        --SORT_ORDER queryname
 
         touch {output.task_done}
         """
@@ -126,18 +137,24 @@ rule sort_and_index:
 rule mark_duplicates:
     input:
         bam = "raw_bams/{sample}_L00{l}.sorted.bam",
-        check_input = sort_and_index_report
+        check_input = sort_bam_files_report
     output:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
         task_done = "raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
     threads: 24
     shell:
         """        
-        java -jar $EBROOTPICARD/picard.jar MarkDuplicates \
-        I={input.bam} \
-        O={output.marked_bam} \
-        M={output.marked_bam}.metrics.txt \
-        "VALIDATION_STRINGENCY=LENIENT"
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk MarkDuplicatesSpark \
+        -I {input.bam} \
+        -O {output.marked_bam} \
+        -M {output.marked_bam}.metrics.txt
 
         touch {output.task_done}
         """
@@ -150,12 +167,19 @@ rule base_recalibrator:
         dbsnp = known_sites,
         check_input = mark_duplicates_report
     output:
-        data_table = "QC/2_postmap/{sample}_L00{l}.recal_data.table",
-        task_done = "QC/2_postmap/reports/base_recalibrator/{sample}_L00{l}.txt"
-    threads: 24
+        data_table = "recalibrated/{sample}_L00{l}.recal_data.table",
+        task_done = "recalibrated/reports/base_recalibrator/{sample}_L00{l}.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
+    threads: 2
     shell:
         """
-        gatk BaseRecalibrator \
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk BaseRecalibrator \
         -I {input.marked_bam} \
         -R {input.ref} \
         --known-sites {input.dbsnp} \
@@ -170,11 +194,19 @@ rule gather_bqsr:
         recalibration_tables = base_recalibrator_output,
         check_input = base_recalibrator_report
     output:
-        gathered_recalibration_table = "QC/2_postmap/cohort.recal_data.table",
-        task_done = "QC/2_postmap/reports/gather_bqsr_reports.txt"
+        gathered_recalibration_table = "recalibrated/cohort.recal_data.table",
+        task_done = "recalibrated/reports/gather_bqsr_reports.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
+    threads: 24
     shell:
         """
-        gatk GatherBqsrReports \
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk GatherBqsrReports \
         -I {input.recalibration_tables} \
         -O {output.gathered_recalibration_table}
         
@@ -185,16 +217,23 @@ rule gather_bqsr:
 rule apply_bqsr:
     input:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
-        recalibration_table = "QC/2_postmap/cohort.recal_data.table",
+        recalibration_table = "recalibrated/cohort.recal_data.table",
         ref = reference,
         check_input = gather_bqsr_report
     output:
-        output_bam = "raw_bams/{sample}_L00{l}.sorted.marked.recal.bam",
-        task_done = "raw_bams/reports/apply_bqsr/{sample}_L00{l}.txt"
+        output_bam = "recalibrated/{sample}_L00{l}.sorted.marked.recal.bam",
+        task_done = "recalibrated/reports/apply_bqsr/{sample}_L00{l}.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
     threads: 24
     shell:
         """
-        gatk ApplyBQSR \
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk ApplyBQSR \
         -R reference.fasta \
         -I {input.marked_bam} \
         --bqsr-recal-file {input.recalibration_table} \
@@ -203,17 +242,16 @@ rule apply_bqsr:
         touch {output.task_done}
         """
 
-# Rule for merging sorted BAM files by lanes
 rule merge_sorted_bam:
     input:
-        bam_sorted_L1 = "raw_bams/{sample}_L001.sorted.marked.recal.bam",
-        bam_sorted_L2 = "raw_bams/{sample}_L002.sorted.marked.recal.bam",
-        bam_sorted_L3 = "raw_bams/{sample}_L003.sorted.marked.recal.bam",
-        bam_sorted_L4 = "raw_bams/{sample}_L004.sorted.marked.recal.bam",
-        report_L1 = "raw_bams/reports/apply_bqsr/{sample}_L001.txt",
-        report_L2 = "raw_bams/reports/apply_bqsr/{sample}_L002.txt",
-        report_L3 = "raw_bams/reports/apply_bqsr/{sample}_L003.txt",
-        report_L4 = "raw_bams/reports/apply_bqsr/{sample}_L004.txt"
+        bam_sorted_L1 = "recalibrated/{sample}_L001.sorted.marked.recal.bam",
+        bam_sorted_L2 = "recalibrated/{sample}_L002.sorted.marked.recal.bam",
+        bam_sorted_L3 = "recalibrated/{sample}_L003.sorted.marked.recal.bam",
+        bam_sorted_L4 = "recalibrated/{sample}_L004.sorted.marked.recal.bam",
+        report_L1 = "recalibrated/reports/apply_bqsr/{sample}_L001.txt",
+        report_L2 = "recalibrated/reports/apply_bqsr/{sample}_L002.txt",
+        report_L3 = "recalibrated/reports/apply_bqsr/{sample}_L003.txt",
+        report_L4 = "recalibrated/reports/apply_bqsr/{sample}_L004.txt"
     output:
         merged_bam = "bam/{sample}.bam",
         merged_bai = "bam/{sample}.bam.bai",
@@ -221,7 +259,7 @@ rule merge_sorted_bam:
     threads: 24
     shell:
         """
-        samtools merge -@ {threads} {input.bam_sorted_L1} {input.bam_sorted_L2} {input.bam_sorted_L3} {input.bam_sorted_L4} -o {output.merged_bam}
+        sambamba merge -t {threads} {output.merged_bam} {input.bam_sorted_L1} {input.bam_sorted_L2} {input.bam_sorted_L3} {input.bam_sorted_L4}
         samtools index {output.merged_bam} -o {output.merged_bai}
 
         touch {output.task_done}
@@ -237,10 +275,17 @@ rule haplotype_calling:
     output:
         gvcfs = "gvcf/{sample}.g.vcf.gz",
         task_done = "gvcf/reports/haplotype_calling/{sample}.txt"
-    threads: 24
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
+    threads: 2
     shell:
         """
-        gatk --java-options "-Xmx4g" HaplotypeCaller \
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk --java-options "-Xmx4g" HaplotypeCaller \
         -R {input.ref} \
         -I {input.merged_bam} \
         -O {output.gvcfs} \
@@ -250,6 +295,7 @@ rule haplotype_calling:
         """
 
 # Rule for GVCFs combining
+#replace with GenomicsDBImport !
 rule combine_gvcfs:
     input:
         gvcfs = haplotype_calling_output,
@@ -258,10 +304,17 @@ rule combine_gvcfs:
     output:
         merged_gvcfs = "gvcf/cohort.g.vcf.gz",
         task_done = "gvcf/reports/combine_gvcfs.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
     threads: 24
     shell:
         """
-        gatk --java-options "-Xmx4g" CombineGVCFs \
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk --java-options "-Xmx4g" CombineGVCFs \
         --variant {input.gvcfs} \
         -R {input.ref} \
         -O {output.merged_gvcfs}
@@ -278,10 +331,17 @@ rule joint_genotyping:
     output:
         merged_vcf = "vcf/cohort.vcf",
         task_done = "vcf/reports/joint_genotyping.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
     threads: 24
     shell:
         """
-        gatk --java-options "-Xmx4g" GenotypeGVCFs \
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk --java-options "-Xmx4g" GenotypeGVCFs \
         -R {input.ref} \
         -V {input.merged_gvcfs} \
         -O {output.merged_vcf}
