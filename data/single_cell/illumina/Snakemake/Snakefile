@@ -5,6 +5,7 @@ GATK_path = "/staging/leuven/stg_00096/software/singularity/gatk_4.2.6.1.sif"
 work_dir = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277"
 stage_dir = "/staging/leuven/stg_00096"
 lustre_dir = "/lustre1/project/stg_00096"
+scratch_dir = "/scratch/leuven/343/vsc34319"
 
 # Define global wildcards
 files = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R{r}_001.fastq.gz")
@@ -19,11 +20,10 @@ bwa_mem2_output = expand("raw_bams/{sample}_L00{l}.bam", zip, sample=files.sampl
 sort_bam_files_output = expand("raw_bams/{sample}_L00{l}.sorted.bam", zip, sample=files.sample, l=files.l)
 mark_duplicates_output = expand("raw_bams/{sample}_L00{l}.sorted.marked.bam", zip, sample=files.sample, l=files.l)
 base_recalibrator_output = expand("recalibrated/{sample}_L00{l}.recal_data.table", zip, sample=files.sample, l=files.l)
-gather_bqsr_output = "recalibrated/cohort.recal_data.table"
 apply_bqsr_output = expand("recalibrated/{sample}_L00{l}.sorted.marked.recal.bam", zip, sample=files.sample, l=files.l)
 merge_sorted_bam_output = expand("bam/{sample}.bam", sample=files.sample)
 haplotype_calling_output = expand("gvcf/{sample}.g.vcf.gz", sample=files.sample)
-combine_gvcfs_output = "gvcf/cohort.g.vcf.gz"
+combine_gvcfs_output = "database"
 joint_genotyping_output = "vcf/cohort.vcf"
 
 # Define output reports
@@ -31,7 +31,6 @@ bwa_mem2_report = expand("raw_bams/reports/bwa_mem2/{sample}_L00{l}.txt", zip, s
 sort_bam_files_report = expand("raw_bams/reports/sort_bam_files/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 mark_duplicates_report = expand("raw_bams/reports/mark_duplicates/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 base_recalibrator_report = expand("recalibrated/reports/base_recalibrator/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
-gather_bqsr_report = "recalibrated/reports/gather_bqsr_reports.txt"
 apply_bqsr_report = expand("recalibrated/reports/apply_bqsr/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 merge_sorted_bam_report = expand("bam/reports/merge_sorted_bam/{sample}.txt", sample=files.sample)
 haplotype_calling_report = expand("gvcf/reports/haplotype_calling/{sample}.txt", sample=files.sample)
@@ -51,8 +50,6 @@ rule all:
         mark_duplicates_report,
         base_recalibrator_output,
         base_recalibrator_report,
-        gather_bqsr_output,
-        gather_bqsr_report,
         apply_bqsr_output,
         apply_bqsr_report,
         merge_sorted_bam_output,
@@ -188,38 +185,13 @@ rule base_recalibrator:
         touch {output.task_done}
         """
 
-# Rule for gathering base quality score recalibration reports
-rule gather_bqsr:
-    input:
-        recalibration_tables = base_recalibrator_output,
-        check_input = base_recalibrator_report
-    output:
-        gathered_recalibration_table = "recalibrated/cohort.recal_data.table",
-        task_done = "recalibrated/reports/gather_bqsr_reports.txt"
-    params:
-        gatk = GATK_path,
-        stage = stage_dir,
-        lustre = lustre_dir
-    threads: 24
-    shell:
-        """
-        singularity run --nv \
-        -B {params.stage} \
-        -B {params.lustre} \
-        {params.gatk} gatk GatherBqsrReports \
-        -I {input.recalibration_tables} \
-        -O {output.gathered_recalibration_table}
-        
-        touch {output.task_done}
-        """
-
 # Rule for applying base quality score recalibration
 rule apply_bqsr:
     input:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
-        recalibration_table = "recalibrated/cohort.recal_data.table",
+        recalibration_table = "recalibrated/{sample}_L00{l}.recal_data.table",
         ref = reference,
-        check_input = gather_bqsr_report
+        check_input = base_recalibrator_report
     output:
         output_bam = "recalibrated/{sample}_L00{l}.sorted.marked.recal.bam",
         task_done = "recalibrated/reports/apply_bqsr/{sample}_L00{l}.txt"
@@ -227,17 +199,17 @@ rule apply_bqsr:
         gatk = GATK_path,
         stage = stage_dir,
         lustre = lustre_dir
-    threads: 24
+    threads: 2
     shell:
         """
         singularity run --nv \
         -B {params.stage} \
         -B {params.lustre} \
         {params.gatk} gatk ApplyBQSR \
-        -R reference.fasta \
+        -R {input.ref} \
         -I {input.marked_bam} \
         --bqsr-recal-file {input.recalibration_table} \
-        -O {output.bam}
+        -O {output.output_bam}
 
         touch {output.task_done}
         """
@@ -254,13 +226,12 @@ rule merge_sorted_bam:
         report_L4 = "recalibrated/reports/apply_bqsr/{sample}_L004.txt"
     output:
         merged_bam = "bam/{sample}.bam",
-        merged_bai = "bam/{sample}.bam.bai",
         task_done = "bam/reports/merge_sorted_bam/{sample}.txt"
     threads: 24
     shell:
         """
         sambamba merge -t {threads} {output.merged_bam} {input.bam_sorted_L1} {input.bam_sorted_L2} {input.bam_sorted_L3} {input.bam_sorted_L4}
-        samtools index {output.merged_bam} -o {output.merged_bai}
+        samtools index {output.merged_bam}
 
         touch {output.task_done}
         """
@@ -298,26 +269,31 @@ rule haplotype_calling:
 #replace with GenomicsDBImport !
 rule combine_gvcfs:
     input:
-        gvcfs = haplotype_calling_output,
         ref = reference,
         check_input = haplotype_calling_report
     output:
-        merged_gvcfs = "gvcf/cohort.g.vcf.gz",
+        database_dir = "database",
         task_done = "gvcf/reports/combine_gvcfs.txt"
     params:
         gatk = GATK_path,
         stage = stage_dir,
-        lustre = lustre_dir
+        lustre = lustre_dir,
+        tmp = scratch_dir,
+        sample_map = "gvcf/sample.map",
+        contigs = "gvcf/contigs.list"
     threads: 24
+    log:
+        "logs/genomicsdbimport.log"
     shell:
         """
         singularity run --nv \
         -B {params.stage} \
         -B {params.lustre} \
-        {params.gatk} gatk --java-options "-Xmx4g" CombineGVCFs \
-        --variant {input.gvcfs} \
+        {params.gatk} gatk --java-options "-Xmx250g" GenomicsDBImport \
+        --genomicsdb-workspace-path database \
         -R {input.ref} \
-        -O {output.merged_gvcfs}
+        --sample-name-map {params.sample_map} \
+        --intervals {params.contigs}
 
         touch {output.task_done}
         """
@@ -325,7 +301,7 @@ rule combine_gvcfs:
 # Rule for joint genotyping
 rule joint_genotyping:
     input:
-        merged_gvcfs = combine_gvcfs_output,
+        database = "database",
         ref = reference,
         check_input = combine_gvcfs_report
     output:
@@ -341,9 +317,9 @@ rule joint_genotyping:
         singularity run --nv \
         -B {params.stage} \
         -B {params.lustre} \
-        {params.gatk} gatk --java-options "-Xmx4g" GenotypeGVCFs \
+        {params.gatk} gatk --java-options "-Xmx250g" GenotypeGVCFs \
         -R {input.ref} \
-        -V {input.merged_gvcfs} \
+        -V gendb://{input.database} \
         -O {output.merged_vcf}
 
         touch {output.task_done}
