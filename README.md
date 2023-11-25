@@ -11,6 +11,10 @@ Load the packages:
 - snakemake --cores 24 -j 1
 - Note: fastqc, multiqc and bwa-mem2 - 24 threads per 1 job
 
+Required files:
+- sample.map and contigs.list for GenomicsDBImport
+
+
 #TODOs:
 - Fix FastQC rule to  run on all samples in parallel (currently it's running one sample at a time)
 - Define the output of GenomicsDBImport
