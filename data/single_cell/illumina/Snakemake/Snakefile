@@ -63,7 +63,7 @@ rule all:
 
 
 # Rule for quality control (FastQC):
-rule fastqc:
+rule FastQC:
     input:
         fq = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R{r}_001.fastq.gz"
     output:
@@ -77,7 +77,7 @@ rule fastqc:
         """
 
 # Rule for generating MultiQC report
-rule multiqc:
+rule MultiQC:
     input:
         report_files = fastqc_output
     output:
@@ -89,7 +89,7 @@ rule multiqc:
         """
 
 # Rule for BWA MEM2 alignment
-rule bwa_mem2:
+rule BWA_MEM2:
     input:
         fq1 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R1_001.fastq.gz",
         fq2 = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R2_001.fastq.gz",
@@ -112,7 +112,7 @@ rule bwa_mem2:
         """
 
 # Rule for sorting BAM files by queryname
-rule sort_bam_files:
+rule SortBamFiles:
     input:
         bam = "raw_bams/{sample}_L00{l}.bam",
         check_input = bwa_mem2_report
@@ -131,7 +131,7 @@ rule sort_bam_files:
         """
 
 # Rule for marking duplicates
-rule mark_duplicates:
+rule MarkDuplicatesSpark:
     input:
         bam = "raw_bams/{sample}_L00{l}.sorted.bam",
         check_input = sort_bam_files_report
@@ -157,7 +157,7 @@ rule mark_duplicates:
         """
 
 # Rule for base quality score recalibration
-rule base_recalibrator:
+rule BaseRecalibrator:
     input:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
         ref = reference,
@@ -186,7 +186,7 @@ rule base_recalibrator:
         """
 
 # Rule for applying base quality score recalibration
-rule apply_bqsr:
+rule ApplyBQSR:
     input:
         marked_bam = "raw_bams/{sample}_L00{l}.sorted.marked.bam",
         recalibration_table = "recalibrated/{sample}_L00{l}.recal_data.table",
@@ -214,7 +214,7 @@ rule apply_bqsr:
         touch {output.task_done}
         """
 
-rule merge_sorted_bam:
+rule MergeSortedBAM:
     input:
         bam_sorted_L1 = "recalibrated/{sample}_L001.sorted.marked.recal.bam",
         bam_sorted_L2 = "recalibrated/{sample}_L002.sorted.marked.recal.bam",
@@ -237,7 +237,7 @@ rule merge_sorted_bam:
         """
 
 # Rule for haplotype calling
-rule haplotype_calling:
+rule HaplotypeCaller:
     input:
         ref = reference,
         merged_bam = "bam/{sample}.bam",
@@ -267,7 +267,7 @@ rule haplotype_calling:
 
 # Rule for GVCFs combining
 #replace with GenomicsDBImport !
-rule combine_gvcfs:
+rule GenomicsDBImport:
     input:
         ref = reference,
         check_input = haplotype_calling_report
@@ -299,7 +299,7 @@ rule combine_gvcfs:
         """
 
 # Rule for joint genotyping
-rule joint_genotyping:
+rule GenotypeGVCFs:
     input:
         database = "database",
         ref = reference,
