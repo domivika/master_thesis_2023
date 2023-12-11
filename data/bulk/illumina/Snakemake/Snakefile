@@ -308,6 +308,7 @@ rule GenomicsDBImport:
         --genomicsdb-workspace-path {output.database_dir} \
         -R {input.ref} \
         -V {input.sample} \
+        --intervals chr{wildcards.n} \
         --genomicsdb-shared-posixfs-optimizations true \
         1> {log.out} 2> {log.err}
 
