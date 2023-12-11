@@ -21,10 +21,8 @@ SortBAMs_output = expand("raw_bams/{sample}_L00{l}.sorted.bam", zip, sample=file
 MarkDuplicatesSpark_output = expand("raw_bams/{sample}_L00{l}.sorted.marked.bam", zip, sample=files.sample, l=files.l)
 BaseRecalibrator_output = expand("recalibrated/{sample}_L00{l}.recal_data.table", zip, sample=files.sample, l=files.l)
 ApplyBQSR_output = expand("recalibrated/{sample}_L00{l}.sorted.marked.recal.bam", zip, sample=files.sample, l=files.l)
-HaplotypeCaller_output = expand("gvcf/{sample}_L00{l}_chr{n}.g.vcf.gz", l=files.l, sample=files.sample, n=chrom.n)
-GenomicsDBImport_output = expand("database/{sample}_L00{l}_chr{n}_gdb", l=files.l, sample=files.sample, n=chrom.n)
-GenotypeGVCFs_output = expand("vcf/{sample}_L00{l}_chr{n}.vcf", l=files.l, sample=files.sample, n=chrom.n)
-MergeVcfs_output = "vcf/merged.vcf"
+HaplotypeCaller_output = expand("gvcf/{sample}_L00{l}_chr{n}.g.vcf.gz", zip, l=files.l, sample=files.sample, n=chrom.n)
+GenomicsDBImport_output = expand("database/chr{n}_gdb", n=chrom.n)
 
 # Define output reports
 FastQC_report = expand("reports/FastQC/{sample}_L00{l}_R{r}_001.txt", zip, sample=files.sample, l=files.l, r=files.r)
@@ -34,10 +32,8 @@ SortBAMs_report = expand("reports/SortBAMs/{sample}_L00{l}.txt", zip, sample=fil
 MarkDuplicatesSpark_report = expand("reports/MarkDuplicatesSpark/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 BaseRecalibrator_report = expand("reports/BaseRecalibrator/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
 ApplyBQSR_report = expand("reports/ApplyBQSR/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
-HaplotypeCaller_report = expand("reports/HaplotypeCaller/{sample}_L00{l}_chr{n}.txt", l=files.l, sample=files.sample, n=chrom.n)
-GenomicsDBImport_report = expand("reports/GenomicsDBImport/{sample}_L00{l}_chr{n}.txt", l=files.l, sample=files.sample, n=chrom.n)
-GenotypeGVCFs_report = expand("reports/GenotypeGVCFs/{sample}_L00{l}_chr{n}.txt", l=files.l, sample=files.sample, n=chrom.n)
-MergeVcfs_report = "reports/MergeVcfs.txt"
+HaplotypeCaller_report = expand("reports/HaplotypeCaller/{sample}_L00{l}_chr{n}.txt", zip, l=files.l, sample=files.sample, n=chrom.n)
+GenomicsDBImport_report = expand("reports/GenomicsDBImport/chr{n}.txt", n=chrom.n)
 
 rule all:
     input:
@@ -58,11 +54,7 @@ rule all:
         HaplotypeCaller_output,
         HaplotypeCaller_report,
         GenomicsDBImport_output,
-        GenomicsDBImport_report,
-        GenotypeGVCFs_output,
-        GenotypeGVCFs_report,
-        MergeVcfs_output,
-        MergeVcfs_report
+        GenomicsDBImport_report
 
 # Rule for quality control (FastQC):
 rule FastQC:
@@ -286,10 +278,10 @@ rule GenomicsDBImport:
     input:
         ref = reference,
         check_input = HaplotypeCaller_report,
-        sample = "gvcf/{sample}_L00{l}_chr{n}.g.vcf.gz"
+        sample = HaplotypeCaller_output
     output:
-        database_dir = directory("database/{sample}_L00{l}_chr{n}_gdb"),
-        task_done = "reports/GenomicsDBImport/{sample}_L00{l}_chr{n}.txt"
+        database_dir = directory("database/chr{n}_gdb"),
+        task_done = "reports/GenomicsDBImport/chr{n}.txt"
     params:
         gatk = GATK_path,
         stage = stage_dir,
@@ -297,8 +289,8 @@ rule GenomicsDBImport:
         tmp = scratch_dir
     threads: 2
     log:
-       out = "logs/GenomicsDBImport/{sample}_L00{l}_chr{n}.out",
-       err = "logs/GenomicsDBImport/{sample}_L00{l}_chr{n}.err"
+       out = "logs/GenomicsDBImport/chr{n}.out",
+       err = "logs/GenomicsDBImport/chr{n}.err"
     shell:
         """
         singularity run --nv \
@@ -309,62 +301,6 @@ rule GenomicsDBImport:
         -R {input.ref} \
         -V {input.sample} \
         --genomicsdb-shared-posixfs-optimizations true \
-        1> {log.out} 2> {log.err}
-
-        touch {output.task_done}
-        """
-
-# Rule for joint genotyping
-rule GenotypeGVCFs:
-    input:
-        ref = reference,
-        check_input = GenomicsDBImport_report,
-        database = "database/{sample}_L00{l}_chr{n}_gdb"
-    output:
-        vcf_per_chrom = "vcf/{sample}_L00{l}_chr{n}.vcf",
-        task_done = "reports/GenotypeGVCFs/{sample}_L00{l}_chr{n}.txt"
-    params:
-        gatk = GATK_path,
-        stage = stage_dir,
-        lustre = lustre_dir
-    threads: 2
-    log:
-       out = "logs/GenotypeGVCFs/{sample}_L00{l}_chr{n}.out",
-       err = "logs/GenotypeGVCFs/{sample}_L00{l}_chr{n}.err"
-    shell:
-        """
-        singularity run --nv \
-        -B {params.stage} \
-        -B {params.lustre} \
-        {params.gatk} gatk --java-options "-Xmx15g" GenotypeGVCFs \
-        -R {input.ref} \
-        --genomicsdb-shared-posixfs-optimizations true \
-        -V gendb://{input.database} \
-        -O {output.vcf_per_chrom} \
-        1> {log.out} 2> {log.err}
-
-        find vcf/ -type f -name "*.vcf.gz" > vcf_files.list
-        touch {output.task_done}
-        """
-
-# Rule for vcf merging
-rule MergeVcfs:
-    input:
-        check_input= GenotypeGVCFs_report
-    output:
-        merged_vcf="vcf/merged.vcf",
-        task_done="reports/MergeVcfs.txt"
-    threads: 2
-    params:
-        vcf="vcf_files.list"
-    log:
-        out="logs/MergeVcfs/merged_vcf.out",
-        err="logs/MergeVcfs/merged_vcf.err"
-    shell:
-        """
-        java -jar $EBROOTPICARD/picard.jar MergeVcfs \
-        -I {params.vcf} \
-        -O {output.merged_vcf} \
         1> {log.out} 2> {log.err}
 
         touch {output.task_done}

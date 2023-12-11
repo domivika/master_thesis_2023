@@ -349,8 +349,8 @@ rule MergeVcfs:
         task_done="vcf/reports/MergeVcfs.txt"
     threads: 2
     log:
-        out="logs/GatherVcfs/merged_vcf.out",
-        err="logs/GatherVcfs/merged_vcf.err"
+        out="logs/MergeVcfs/merged_vcf.out",
+        err="logs/MergeVcfs/merged_vcf.err"
     shell:
         """
         java -jar $EBROOTPICARD/picard.jar MergeVcfs \
