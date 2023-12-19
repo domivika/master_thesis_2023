@@ -27,7 +27,7 @@ haplotype_calling_output = expand("gvcf/{sample}/{sample}_chr{n}.g.vcf.gz", samp
 GatherVcfs_output = expand("GatherVcfs/{sample}.g.vcf.gz", sample=files.sample)
 GenomicsDBImport_output = expand("database/chr{n}_gdb", n=chrom.n)
 GenotypeGVCFs_output = expand("vcf/chr{n}.vcf", n=chrom.n)
-MergeVcfs_output = "vcf/merged.vcf"
+GatherVcfs2_output = "vcf/merged.vcf"
 
 # Define output reports
 bwa_mem2_report = expand("raw_bams/reports/bwa_mem2/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
@@ -38,9 +38,10 @@ apply_bqsr_report = expand("recalibrated/reports/apply_bqsr/{sample}_L00{l}.txt"
 merge_sorted_bam_report = expand("bam/reports/merge_sorted_bam/{sample}.txt", sample=files.sample)
 haplotype_calling_report = expand("reports/haplotype_calling/{sample}/{sample}_chr{n}.txt", sample=files.sample, n=chrom.n)
 GatherVcfs_report = expand("reports/GatherVcfs/{sample}.txt", sample=files.sample)
-GenomicsDBImport_report = expand("reports/combine_gvcfs/chr{n}.txt", n=chrom.n)
+GenomicsDBImport_report = expand("reports/GenomicsDBImport/chr{n}.txt", n=chrom.n)
 GenotypeGVCFs_report = expand("reports/GenotypeGVCFs/chr{n}.txt", n=chrom.n)
-MergeVcfs_report = "vcf/reports/MergeVcfs.txt"
+GatherVcfs2_report = "reports/GatherVcfs2/merged.txt"
+
 
 
 rule all:
@@ -63,13 +64,12 @@ rule all:
         haplotype_calling_report,
         GatherVcfs_output,
         GatherVcfs_report,
-        combine_gvcfs_output,
-        combine_gvcfs_report,
-        joint_genotyping_output,
-        joint_genotyping_report,
-        MergeVcfs_output,
-        MergeVcfs_report
-
+        GenomicsDBImport_output,
+        GenomicsDBImport_report,
+        GenotypeGVCFs_output,
+        GenotypeGVCFs_report,
+        GatherVcfs2_output,
+        GatherVcfs2_report
 
 # Rule for quality control (FastQC):
 rule fastqc:
@@ -360,7 +360,7 @@ rule GenotypeGVCFs:
         check_input = GenomicsDBImport_report,
         database = "database/chr{n}_gdb"
     output:
-        merged_vcf = "vcf/chr{n}.vcf",
+        vcf_chr = "vcf/chr{n}.vcf",
         task_done = "reports/GenotypeGVCFs/chr{n}.txt"
     params:
         gatk = GATK_path,
@@ -380,31 +380,42 @@ rule GenotypeGVCFs:
         --genomicsdb-shared-posixfs-optimizations true \
         -V gendb://{input.database} \
         --intervals chr{wildcards.n} \
-        -O {output.merged_vcf} \
+        -O {output.vcf_chr} \
         1> {log.out} 2> {log.err}
 
         touch {output.task_done}
         """
 
-# Rule for vcf merging
-rule MergeVcfs:
+# Rule for merging GVCF files
+rule GatherVcfs2:
     input:
-        vcf="vcf_files.list",
-        check_input= joint_genotyping_report
+        ref = reference,
+        check_input = GenotypeGVCFs_report
     output:
-        merged_vcf="vcf/merged.vcf",
-        task_done="vcf/reports/MergeVcfs.txt"
+        merged_vcf = "vcf/merged.vcf",
+        task_done = "reports/GatherVcfs2/merged.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir,
+        vcfs = "merged_vcf.list"
     threads: 2
     log:
-        out="logs/MergeVcfs/merged_vcf.out",
-        err="logs/MergeVcfs/merged_vcf.err"
+       out = "logs/GatherVcfs2/merged.out",
+       err = "logs/GatherVcfs2/merged.err"
     shell:
         """
-        java -jar $EBROOTPICARD/picard.jar MergeVcfs \
-        -I {input.vcf} \
+        ls -1v vcf/*.vcf > merged_vcf.list
+
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk GatherVcfs \
+        -I {params.vcfs} \
         -O {output.merged_vcf} \
+        -RI \
+        --CREATE_INDEX true \
         1> {log.out} 2> {log.err}
 
         touch {output.task_done}
         """
-
