@@ -1,0 +1,295 @@
+# Define paths to references and directories
+reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/index/bwa-mem2/Homo_sapiens_assembly38_masked.fasta"
+known_sites = "/staging/leuven/stg_00096/references/GRCh38.alt-masked-V2/annotation/snv_indel/gnomAD_v3.1.2/small-gnomad-common-GRCexcl.genomes.v3.1.2.sites.all.vcf.bgz"
+GATK_path = "/staging/leuven/stg_00096/software/singularity/gatk_4.2.6.1.sif"
+work_dir = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277"
+stage_dir = "/staging/leuven/stg_00096"
+lustre_dir = "/lustre1/project/stg_00096"
+scratch_dir = "/scratch/leuven/343/vsc34319"
+snpEff_jar = "/data/leuven/343/vsc34319/miniconda3/pkgs/snpeff-5.2-hdfd78af_0/share/snpeff-5.2-0/snpEff.jar"
+snpSift_dbnsfp = "/staging/leuven/stg_00096/home/dkresa/data/reference/dbNSFP.txt.gz"
+snpSift_jar = "/data/leuven/343/vsc34319/miniconda3/pkgs/snpsift-5.2-hdfd78af_0/share/snpsift-5.2-0/SnpSift.jar"
+dbSNP = "/staging/leuven/stg_00096/home/dkresa/data/reference/00-All.vcf.gz"
+
+# Define global wildcards
+files = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R{r}_001.fastq.gz")
+fq1 = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R1_001.fastq.gz")
+fq2 = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230623.NovaSeq2.FCA/1277/{sample}_L00{l}_R2_001.fastq.gz")
+chrom = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230623.NovaSeq2.FCA/Snakemake/contigs/chr{n}")
+
+
+# Define output files
+GenomicsDBImport_output_test = expand("database_test_19.03/chr{n}_gdb", n=chrom.n)
+GenotypeGVCFs_output_test = expand("vcf_test_19.03/chr{n}.vcf", n=chrom.n)
+GatherVcfs2_output_test = "vcf_test_19.03/merged_GC137892.vcf"
+VariantFiltration_output_test = "vcf_test_19.03/merged_GC137892_PASS.vcf"
+SNPSiftAnnotate_output = "vcf_test_19.03/merged_GC137892_PASS_dbSnp.vcf"
+snpEff_output = "vcf_test_19.03/merged_GC137892_PASS_dbSnp_ann.vcf"
+SNPSiftDbnsfp_output = "vcf_test_19.03/merged_GC137892_PASS_dbSnp_ann_dbnsfp.vcf"
+
+
+
+
+# Define output reports
+GenomicsDBImport_report_test = expand("reports/GenomicsDBImport_test/chr{n}.txt", n=chrom.n)
+GenotypeGVCFs_report_test = expand("reports/GenotypeGVCFs_test/chr{n}.txt", n=chrom.n)
+GatherVcfs2_report_test = "reports/GatherVcfs2_test/merged_GC137892.txt"
+VariantFiltration_report_test = "reports/VariantFiltration_test/merged_GC137892_PASS.txt"
+SNPSiftAnnotate_report = "reports/SNPSiftAnnotate/merged_GC137892_PASS_dbSnp.txt"
+snpEff_report = "reports/snpEff/merged_GC137892_PASS_dbSnp_ann.txt"
+SNPSiftDbnsfp_report = "reports/SNPSiftDbnsfp/merged_GC137892_PASS_dbSnp_ann_dbnsfp.txt"
+
+rule all:
+    input:
+        GenomicsDBImport_output_test,
+        GenomicsDBImport_report_test,
+        GenotypeGVCFs_output_test,
+        GenotypeGVCFs_report_test,
+        GatherVcfs2_output_test,
+        GatherVcfs2_report_test,
+        VariantFiltration_output_test,
+        VariantFiltration_report_test,
+        SNPSiftAnnotate_output,
+        SNPSiftAnnotate_report,
+        snpEff_output,
+        snpEff_report,
+        SNPSiftDbnsfp_output,
+        SNPSiftDbnsfp_report
+
+
+# Rule for GVCFs combining (single-cell + bulk data)
+rule GenomicsDBImport:
+    input:
+        ref = reference,
+        chrom = "contigs/chr{n}"
+    output:
+        database_dir = directory("database_test_19.03/chr{n}_gdb"),
+        task_done = "reports/GenomicsDBImport_test/chr{n}.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir,
+        tmp = scratch_dir,
+        sample_map = "sample_test.map"
+    threads: 2
+    log:
+       out = "logs/GenomicsDBImport_test/chr{n}.out",
+       err = "logs/GenomicsDBImport_test/chr{n}.err"
+    shell:
+        """
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk --java-options "-Xmx15g" GenomicsDBImport \
+        --genomicsdb-workspace-path {output.database_dir} \
+        -R {input.ref} \
+        --sample-name-map {params.sample_map} \
+        --intervals chr{wildcards.n} \
+        --genomicsdb-shared-posixfs-optimizations true \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
+
+# Rule for joint genotyping
+rule GenotypeGVCFs:
+    input:
+        ref = reference,
+        check_input = GenomicsDBImport_report_test,
+        database = "database_test_19.03/chr{n}_gdb"
+    output:
+        vcf_chr = "vcf_test_19.03/chr{n}.vcf",
+        task_done = "reports/GenotypeGVCFs_test/chr{n}.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
+    threads: 2
+    log:
+       out = "logs/GenotypeGVCFs_test/chr{n}.out",
+       err = "logs/GenotypeGVCFs_test/chr{n}.err"
+    shell:
+        """
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk --java-options "-Xmx15g" GenotypeGVCFs \
+        -R {input.ref} \
+        --genomicsdb-shared-posixfs-optimizations true \
+        -V gendb://{input.database} \
+        --intervals chr{wildcards.n} \
+        -O {output.vcf_chr} \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
+
+# Rule for merging GVCF files
+rule GatherVcfs2:
+    input:
+        ref = reference,
+        check_input = GenotypeGVCFs_report_test
+    output:
+        merged_vcf = "vcf_test_19.03/merged_GC137892.vcf",
+        task_done = "reports/GatherVcfs2_test/merged_GC137892.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir,
+        vcfs = "merged_vcf_test.list"
+    threads: 2
+    log:
+       out = "logs/GatherVcfs2_test/merged_GC137892.out",
+       err = "logs/GatherVcfs2_test/merged_GC137892.err"
+    shell:
+        """
+        ls -1v vcf_test_19.03/*.vcf > merged_vcf_test.list
+
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk GatherVcfs \
+        -I {params.vcfs} \
+        -O {output.merged_vcf} \
+        -RI \
+        --CREATE_INDEX true \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
+
+# Rule for variant filtration
+rule VariantFiltration:
+    input:
+        ref = reference,
+        vcf = "vcf_test_19.03/merged_GC137892.vcf",
+        check_input = GatherVcfs2_report_test
+    output:
+        filtered_vcf = "vcf_test_19.03/merged_GC137892_PASS.vcf",
+        task_done = "reports/VariantFiltration_test/merged_GC137892_PASS.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
+    threads: 2
+    log:
+       out = "logs/VariantFiltration_test/merged_GC137892_PASS.out",
+       err = "logs/VariantFiltration_test/merged_GC137892_PASS.err"
+    shell:
+        """
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk --java-options "-Xmx15g" VariantFiltration \
+        -R {input.ref} \
+        -V {input.vcf} \
+        -O {output.filtered_vcf} \
+        --filter-expression "QD < 2.0" \
+        --filter-expression "MQ < 40.0" \
+        --filter-expression "HaplotypeScore > 13.0" \
+        --filter-expression "FS > 60.0" \
+        --filter-expression "MQRankSum < -12.5" \
+        --filter-expression "ReadPosRankSum < -8.0" \
+        --filter-expression "MQ0 >= 4 && ((MQ0 / (1.0 * DP)) > 0.1)" \
+        --filter-expression "DP < 5" \
+        --filter-expression "QUAL < 30.0" \
+        --filter-expression "QUAL >= 30.0 && QUAL < 50.0" \
+        --filter-expression "SOR > 4.0" \
+        --filter-name "SNP_LowQualityDepth" \
+        --filter-name "SNP_MappingQuality" \
+        --filter-name "SNP_StrandBias" \
+        --filter-name "SNP_HaplotypeScoreHigh" \
+        --filter-name "SNP_MQRankSumLow" \
+        --filter-name "SNP_ReadPosRankSumLow" \
+        --filter-name "SNP_HardToValidate" \
+        --filter-name "SNP_LowCoverage" \
+        --filter-name "SNP_VeryLowQual" \
+        --filter-name "SNP_LowQual" \
+        --filter-name "SNP_SOR" \
+        -cluster 3 \
+        -window 10 \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
+        
+# Rule for SNPSiftAnnotate annotation
+rule SNPSiftAnnotate:
+    input:
+        vcf = "vcf_test_19.03/merged_GC137892_PASS.vcf",
+        check_input = VariantFiltration_report_test
+    output:
+        annotated_vcf = "vcf_test_19.03/merged_GC137892_PASS_dbSnp.vcf",
+        task_done = "reports/SNPSiftAnnotate/merged_GC137892_PASS_dbSnp.txt"
+    params:
+        snpsift = snpSift_jar,
+        db = dbSNP
+    log:
+       out = "logs/SNPSiftAnnotate/merged_GC137892_PASS_dbSnp.out",
+       err = "logs/SNPSiftAnnotate/merged_GC137892_PASS_dbSnp.err"
+    shell:
+        """
+        java -Xmx200g -jar {params.snpsift} annotate \
+        -id \
+        {params.db} \
+        {input.vcf} > {output.annotated_vcf}
+
+        touch {output.task_done}
+        """
+
+# Rule for SNPEff annotation
+rule snpEff:
+    input:
+        vcf = "vcf_test_19.03/merged_GC137892_PASS_dbSnp.vcf",
+        check_input = SNPSiftAnnotate_report
+    output:
+        annotated_vcf = "vcf_test_19.03/merged_GC137892_PASS_dbSnp_ann.vcf",
+        task_done = "reports/snpEff/merged_GC137892_PASS_dbSnp_ann.txt"
+    params:
+        reference = "GRCh38.86",
+        snpeff = snpEff_jar
+    threads: 16
+    log:
+       out = "logs/snpEff/merged_GC137892_PASS_dbSnp_ann.out",
+       err = "logs/snpEff/merged_GC137892_PASS_dbSnp_ann.err"
+    shell:
+        """
+        java -Xmx200g -jar {params.snpeff} ann \
+        -v \
+        -hgvs \
+        -lof \
+        -no-downstream \
+        -no-upstream \
+        -no-intergenic \
+        -o gatk \
+        {params.reference} \
+        {input.vcf} > {output.annotated_vcf}
+
+        touch {output.task_done}
+        """
+    
+# Rule for SNPSiftDbnsfp annotation
+rule SNPSiftDbnsfp:
+    input:
+        vcf = "vcf_test_19.03/merged_GC137892_PASS_dbSnp_ann.vcf",
+        check_input = snpEff_report
+    output:
+        annotated_vcf = "vcf_test_19.03/merged_GC137892_PASS_dbSnp_ann_dbnsfp.vcf",
+        task_done = "reports/SNPSiftDbnsfp/merged_GC137892_PASS_dbSnp_ann_dbnsfp.txt"
+    params:
+        snpsift = snpSift_jar,
+        db = snpSift_dbnsfp
+    log:
+       out = "logs/SNPSiftDbnsfp/merged_GC137892_PASS_dbSnp_ann_dbnsfp.out",
+       err = "logs/SNPSiftDbnsfp/merged_GC137892_PASS_dbSnp_ann_dbnsfp.err"
+    shell:
+        """
+        java -Xmx200g -jar {params.snpsift} dbnsfp \
+        -v \
+        -o gatk \
+        -f hg38_chr,hg38_pos,genename,Uniprot_acc,Uniprot_id,Uniprot_aapos,Interpro_domain,cds_strand,refcodon,SLR_test_statistic,codonpos,fold-degenerate,Ancestral_allele,Ensembl_geneid,Ensembl_transcriptid,aapos,aapos_SIFT,aapos_FATHMM,SIFT_score,SIFT_converted_rankscore,SIFT_pred,Polyphen2_HDIV_score,Polyphen2_HDIV_rankscore,Polyphen2_HDIV_pred,Polyphen2_HVAR_score,Polyphen2_HVAR_rankscore,Polyphen2_HVAR_pred,LRT_score,LRT_converted_rankscore,LRT_pred,MutationTaster_score,MutationTaster_converted_rankscore,MutationTaster_pred,MutationAssessor_score,MutationAssessor_rankscore,MutationAssessor_pred,FATHMM_score,FATHMM_rankscore,FATHMM_pred,MetaSVM_score,MetaSVM_rankscore,MetaSVM_pred,MetaLR_score,MetaLR_rankscore,MetaLR_pred,Reliability_index,VEST3_score,VEST3_rankscore,PROVEAN_score,PROVEAN_converted_rankscore,PROVEAN_pred,CADD_raw,CADD_raw_rankscore,CADD_phred,GERP++_NR,GERP++_RS,GERP++_RS_rankscore,phyloP46way_primate,phyloP46way_primate_rankscore,phyloP46way_placental,phyloP46way_placental_rankscore,phyloP100way_vertebrate,phyloP100way_vertebrate_rankscore,phastCons46way_primate,phastCons46way_primate_rankscore,phastCons46way_placental,phastCons46way_placental_rankscore,phastCons100way_vertebrate,phastCons100way_vertebrate_rankscore,SiPhy_29way_pi,SiPhy_29way_logOdds,SiPhy_29way_logOdds_rankscore,LRT_Omega,UniSNP_ids,1000Gp1_AC,1000Gp1_AF,1000Gp1_AFR_AC,1000Gp1_AFR_AF,1000Gp1_EUR_AC,1000Gp1_EUR_AF,1000Gp1_AMR_AC,1000Gp1_AMR_AF,1000Gp1_ASN_AC,1000Gp1_ASN_AF,ESP6500_AA_AF,ESP6500_EA_AF,ARIC5606_AA_AC,ARIC5606_AA_AF,ARIC5606_EA_AC,ARIC5606_EA_AF,ExAC_AC,ExAC_AF,ExAC_Adj_AC,ExAC_Adj_AF,ExAC_AFR_AC,ExAC_AFR_AF,ExAC_AMR_AC,ExAC_AMR_AF,ExAC_EAS_AC,ExAC_EAS_AF,ExAC_FIN_AC,ExAC_FIN_AF,ExAC_NFE_AC,ExAC_NFE_AF,ExAC_SAS_AC,ExAC_SAS_AF,clinvar_rs,clinvar_clnsig,clinvar_trait,COSMIC_ID,COSMIC_CNT \
+        -db {params.db} \
+        {input.vcf} > {output.annotated_vcf}
+        touch {output.task_done}
+        """
+

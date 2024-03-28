@@ -28,6 +28,9 @@ GatherVcfs_output = expand("GatherVcfs/{sample}.g.vcf.gz", sample=files.sample)
 GenomicsDBImport_output = expand("database/chr{n}_gdb", n=chrom.n)
 GenotypeGVCFs_output = expand("vcf/chr{n}.vcf", n=chrom.n)
 GatherVcfs2_output = "vcf/merged.vcf"
+VariantFiltration_output = "vcf/merged_filtered.vcf"
+CollectWgsMetrics_output = expand("QC/2_postmap/{sample}_wgs_metrics.txt", sample=files.sample)
+CollectAlignmentSummaryMetrics_output = expand("QC/2_postmap/{sample}_alignment_summary_metrics.txt", sample=files.sample)
 
 # Define output reports
 bwa_mem2_report = expand("raw_bams/reports/bwa_mem2/{sample}_L00{l}.txt", zip, sample=files.sample, l=files.l)
@@ -41,7 +44,9 @@ GatherVcfs_report = expand("reports/GatherVcfs/{sample}.txt", sample=files.sampl
 GenomicsDBImport_report = expand("reports/GenomicsDBImport/chr{n}.txt", n=chrom.n)
 GenotypeGVCFs_report = expand("reports/GenotypeGVCFs/chr{n}.txt", n=chrom.n)
 GatherVcfs2_report = "reports/GatherVcfs2/merged.txt"
-
+VariantFiltration_report = "reports/VariantFiltration/merged_filtered.txt"
+CollectWgsMetrics_report = expand("reports/CollectWgsMetrics/{sample}_wgs_metrics.txt", sample=files.sample)
+CollectAlignmentSummaryMetrics_report = expand("reports/CollectAlignmentSummaryMetrics/{sample}_alignment_summary_metrics.txt", sample=files.sample)
 
 
 rule all:
@@ -69,7 +74,13 @@ rule all:
         GenotypeGVCFs_output,
         GenotypeGVCFs_report,
         GatherVcfs2_output,
-        GatherVcfs2_report
+        GatherVcfs2_report,
+        VariantFiltration_output,
+        VariantFiltration_report,
+        CollectWgsMetrics_output,
+        CollectWgsMetrics_report,
+        CollectAlignmentSummaryMetrics_output,
+        CollectAlignmentSummaryMetrics_report
 
 # Rule for quality control (FastQC):
 rule fastqc:
@@ -415,6 +426,109 @@ rule GatherVcfs2:
         -O {output.merged_vcf} \
         -RI \
         --CREATE_INDEX true \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
+
+# Rule for variant filtration
+rule VariantFiltration:
+    input:
+        ref = reference,
+        vcf = "vcf/merged.vcf",
+        check_input = GatherVcfs2_report
+    output:
+        filtered_vcf = "vcf/merged_filtered.vcf",
+        task_done = "reports/VariantFiltration/merged_filtered.txt"
+    params:
+        gatk = GATK_path,
+        stage = stage_dir,
+        lustre = lustre_dir
+    threads: 2
+    log:
+       out = "logs/VariantFiltration/filtered.out",
+       err = "logs/VariantFiltration/filtered.err"
+    shell:
+        """
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.gatk} gatk --java-options "-Xmx15g" VariantFiltration \
+        -R {input.ref} \
+        -V {input.vcf} \
+        -O {output.filtered_vcf} \
+        --filter-expression "QD < 2.0" \
+        --filter-expression "MQ < 40.0" \
+        --filter-expression "HaplotypeScore > 13.0" \
+        --filter-expression "FS > 60.0" \
+        --filter-expression "MQRankSum < -12.5" \
+        --filter-expression "ReadPosRankSum < -8.0" \
+        --filter-expression "MQ0 >= 4 && ((MQ0 / (1.0 * DP)) > 0.1)" \
+        --filter-expression "DP < 5" \
+        --filter-expression "QUAL < 30.0" \
+        --filter-expression "QUAL >= 30.0 && QUAL < 50.0" \
+        --filter-expression "SOR > 4.0" \
+        --filter-name "SNP_LowQualityDepth" \
+        --filter-name "SNP_MappingQuality" \
+        --filter-name "SNP_StrandBias" \
+        --filter-name "SNP_HaplotypeScoreHigh" \
+        --filter-name "SNP_MQRankSumLow" \
+        --filter-name "SNP_ReadPosRankSumLow" \
+        --filter-name "SNP_HardToValidate" \
+        --filter-name "SNP_LowCoverage" \
+        --filter-name "SNP_VeryLowQual" \
+        --filter-name "SNP_LowQual" \
+        --filter-name "SNP_SOR" \
+        -cluster 3 \
+        -window 10 \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
+
+# Rule for quality control after mapping (CollectWgsMetrics)
+rule CollectWgsMetrics:
+    input:
+        check_input = merge_sorted_bam_report,
+        merged_bam_markdup = "bam/{sample}.bam",
+        ref = reference
+    output:
+        wgs_metrics = "QC/2_postmap/{sample}_wgs_metrics.txt",
+        task_done = "reports/CollectWgsMetrics/{sample}_wgs_metrics.txt"
+    threads: 1
+    log:
+       out = "logs/CollectWgsMetrics/{sample}.out",
+       err = "logs/CollectWgsMetrics/{sample}.err"
+    shell:
+        """
+        java -jar $EBROOTPICARD/picard.jar CollectWgsMetrics \
+        I={input.merged_bam_markdup} \
+        O={output.wgs_metrics} \
+        R={input.ref} \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
+
+# Rule for quality control after mapping (CollectAlignmentSummaryMetrics)
+rule CollectAlignmentSummaryMetrics:
+    input:
+        check_input = merge_sorted_bam_report,
+        merged_bam_markdup = "bam/{sample}.bam",
+        ref = reference
+    output:
+        alignment_summary_metrics = "QC/2_postmap/{sample}_alignment_summary_metrics.txt",
+        task_done = "reports/CollectAlignmentSummaryMetrics/{sample}_alignment_summary_metrics.txt"
+    threads: 1
+    log:
+       out = "logs/CollectAlignmentSummaryMetrics/{sample}.out",
+       err = "logs/CollectAlignmentSummaryMetrics/{sample}.err"
+    shell:
+        """
+        java -jar $EBROOTPICARD/picard.jar CollectAlignmentSummaryMetrics \
+        R={input.ref} \
+        I={input.merged_bam_markdup} \
+        O={output.alignment_summary_metrics} \
         1> {log.out} 2> {log.err}
 
         touch {output.task_done}
