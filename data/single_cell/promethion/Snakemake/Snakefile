@@ -1,32 +1,28 @@
-# Define reference genome path
+# Define paths to references and directories
 reference = "/lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/index/bwa-mem2/Homo_sapiens_assembly38_masked.fasta"
-
-# Define reference transcriptome path
 ref_transcriptome = "/staging/leuven/stg_00096/home/dkresa/data/reference/transcripts/gencode.v44.transcripts.fa"
-
-# Define annotation for a reference genome
 annotation = "/staging/leuven/stg_00096/home/dkresa/data/reference/annotations/gencode.v44.basic.annotation.bed"
+stage_dir = "/staging/leuven/stg_00096"
+lustre_dir = "/lustre1/project/stg_00096"
+scratch_dir = "/scratch/leuven/343/vsc34319"
+salmon_dir = "/staging/leuven/stg_00096/home/dkresa/singularity/salmon_1.10.3.sif"
+tandem_repeat_regions = "lustre1/project/stg_00096/references/GRCh38.alt-masked-V2/annotation $ cd /staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/human_GRCh38_no_alt_analysis_set.trf.bed"
+
 
 # Define samples using glob_wildcards
 samples, = glob_wildcards("/staging/leuven/stg_00096/home/dkresa/ResolveOME/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R_basecalled/demux/{sample}.fastq.gz")
 
 
-# List all the FastQC output files
 fastqc_output_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap/{sample}_fastqc.zip", sample=samples)
-
 multiqc_report = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/QC/1_premap/multiqc_report.html"
-
-# List all the minimap2 output bam files (mapped to genome)
 minimap2_output_bam_files = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.bam", sample=samples)
-
-# List all the samtools sort & index output bam.sorted.bai files (mapped to genome)
-samtools_sort_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.sorted.bam.bai", sample=samples)
-
-# List all the minimap2 output bam files (mapped to transcriptome)
+samtools_sort_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.sorted.bam", sample=samples)
 minimap2_output_bam_files_transcriptome = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.bam", sample=samples)
-
-# List all the samtools sort & index output bam.sorted.bai files (mapped to transcriptome)
 samtools_sort_output_transcriptome = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.sorted.bam.bai", sample=samples)
+filter_primary_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.primary.bam", sample=samples)
+filter_primary_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}.txt", sample=samples)
+salmon_quant_output = directory(expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/salmon/{sample}/", sample=samples))
+salmon_quant_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/salmon/{sample}.txt", sample=samples)
 
 rule all:
     input:
@@ -35,7 +31,10 @@ rule all:
         minimap2_output_bam_files,
         samtools_sort_output,
         minimap2_output_bam_files_transcriptome,
-        samtools_sort_output_transcriptome
+        samtools_sort_output_transcriptome,
+        filter_primary_output,
+        filter_primary_report,
+        salmon_quant_report
 
 
 # Rule for quality control (FastQC):
@@ -122,3 +121,51 @@ rule sort_and_index_transcriptome:
         samtools sort -@ {threads} -o {output.sorted_bam} {input.bam}
         samtools index {output.sorted_bam} {output.bam_index}
         """     
+
+# Rule for filtering primary alignments
+rule filter_primary:
+    input:
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.bam"
+    output:
+        primary = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.primary.bam",
+        task_done = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}.txt"
+    threads: 24
+    shell:
+        """
+        samtools view -F 256 -b -@ {threads} {input.bam} > {output.primary}
+        touch {output.task_done}
+        """
+
+# Rule for quantification with Salmon (transcript-level quantification)
+rule salmon_quant:
+    input:
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.primary.bam",
+        ref = ref_transcriptome
+    output:
+        quant = directory("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/salmon/{sample}/"),
+        task_done = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/salmon/{sample}.txt"
+    params:
+        stage = stage_dir,
+        lustre = lustre_dir,
+        salmon = salmon_dir
+    threads: 24
+    log:
+       out = "logs/salmon/{sample}.out",
+       err = "logs/salmon/{sample}.err"
+    shell:
+        """
+        singularity run --nv \
+        -B {params.stage} \
+        -B {params.lustre} \
+        {params.salmon} \
+        salmon quant \
+        -t {input.ref} \
+        -l A \
+        --ont \
+        --noErrorModel \
+        -a {input.bam} \
+        -o {output.quant} \
+        1> {log.out} 2> {log.err}
+
+        touch {output.task_done}
+        """
