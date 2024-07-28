@@ -21,6 +21,8 @@ minimap2_output_bam_files_transcriptome = expand("/staging/leuven/stg_00096/home
 samtools_sort_output_transcriptome = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.sorted.bam.bai", sample=samples)
 filter_primary_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.primary.bam", sample=samples)
 filter_primary_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}.txt", sample=samples)
+filter_primary_genome_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.primary.bam", sample=samples)
+filter_primary_genome_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}_genome.txt", sample=samples)
 salmon_quant_output = directory(expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/salmon/{sample}/", sample=samples))
 salmon_quant_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/salmon/{sample}.txt", sample=samples)
 
@@ -34,6 +36,8 @@ rule all:
         samtools_sort_output_transcriptome,
         filter_primary_output,
         filter_primary_report,
+        filter_primary_genome_output,
+        filter_primary_genome_report,
         salmon_quant_report
 
 
@@ -122,13 +126,27 @@ rule sort_and_index_transcriptome:
         samtools index {output.sorted_bam} {output.bam_index}
         """     
 
-# Rule for filtering primary alignments
+# Rule for filtering primary alignments (transcriptome)
 rule filter_primary:
     input:
         bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.bam"
     output:
         primary = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.primary.bam",
         task_done = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}.txt"
+    threads: 24
+    shell:
+        """
+        samtools view -F 256 -b -@ {threads} {input.bam} > {output.primary}
+        touch {output.task_done}
+        """
+
+# Rule for filtering primary alignments (genome)
+rule filter_primary_genome:
+    input:
+        bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.bam"
+    output:
+        primary = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.primary.bam",
+        task_done = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}_genome.txt"
     threads: 24
     shell:
         """
