@@ -21,7 +21,7 @@ minimap2_output_bam_files_transcriptome = expand("/staging/leuven/stg_00096/home
 samtools_sort_output_transcriptome = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.sorted.bam.bai", sample=samples)
 filter_primary_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2_transcriptome/{sample}.primary.bam", sample=samples)
 filter_primary_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}.txt", sample=samples)
-filter_primary_genome_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.primary.bam", sample=samples)
+filter_primary_genome_output = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/bams/{sample}.primary.bam", sample=samples)
 filter_primary_genome_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}_genome.txt", sample=samples)
 salmon_quant_output = directory(expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/salmon/{sample}/", sample=samples))
 salmon_quant_report = expand("/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/salmon/{sample}.txt", sample=samples)
@@ -145,7 +145,7 @@ rule filter_primary_genome:
     input:
         bam = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.bam"
     output:
-        primary = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/{sample}.primary.bam",
+        primary = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/minimap2/bams/{sample}.primary.bam",
         task_done = "/staging/leuven/stg_00096/home/dkresa/data/single_cell/230601_ResolveO_Opt1_RPMI8402_FLcDNA_R/reports/primary/{sample}_genome.txt"
     threads: 24
     shell:
