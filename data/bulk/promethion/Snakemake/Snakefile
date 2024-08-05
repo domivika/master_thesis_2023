@@ -4,26 +4,27 @@ pod5_dir = "/staging/leuven/stg_00096/home/dkresa/ResolveOME/bulk/1694205563_gc-
 dorado_dir = "/staging/leuven/stg_00096/home/dkresa/singularity/dorado_v0.4.1.sif"
 stage_dir = "/staging/leuven/stg_00096"
 lustre_dir = "/lustre1/project/stg_00096"
+annotation = "/staging/leuven/stg_00096/home/dkresa/data/reference/annotations/gencode.v44.basic.annotation.bed"
 
 # Define output files
-dorado_basecaller_output = "basecalled/bam/1694205563_basecalled_aligned.bam"
-dorado_summary_output = "basecalled/summary/sequencing_summary.tsv"
-dorado_demux_output = "basecalled/demux/"
+dorado_basecaller_output = "basecalled/bam/1694205563_basecalled.bam"
+minimap2_output = "basecalled/bam/1694205563_basecalled_aligned.primary.bam"
+sorted_output = "bams/1694205563.sorted.primary.bam.bai"
 
 #Define output reports
-dorado_basecaller_report = "reports/dorado_basecaller/1694205563_basecalled_aligned.txt"
-dorado_summary_report = "reports/dorado_summary/sequencing_summary.txt"
-dorado_demux_report = "reports/dorado_demux/1694205563_basecalled_aligned.txt"
+dorado_basecaller_report = "reports/dorado_basecaller/1694205563_basecalled.txt"
+minimap2_report = "reports/dorado_basecaller/1694205563_basecalled_aligned.primary.txt"
+sorted_report = "reports/sorted/1694205563.sorted.primary.txt"
 
 
 rule all:
     input:
         dorado_basecaller_output,
         dorado_basecaller_report,
-        dorado_summary_output,
-        dorado_summary_report,
-        dorado_demux_output,
-        dorado_demux_report
+        minimap2_output,
+        minimap2_report,
+        sorted_output,
+        sorted_report
 
 
 # Rule for basecalling in dorado
@@ -32,8 +33,8 @@ rule dorado_basecaller:
         pod5 = pod5_dir,
         ref = reference
     output:
-        bam = "basecalled/bam/1694205563_basecalled_aligned.bam",
-        task_done = "reports/dorado_basecaller/1694205563_basecalled_aligned.txt"
+        bam = "basecalled/bam/1694205563_basecalled.bam",
+        task_done = "reports/dorado_basecaller/1694205563_basecalled.txt"
     params:
         stage = stage_dir,
         lustre = lustre_dir,
@@ -48,68 +49,43 @@ rule dorado_basecaller:
         /opt/dorado/bin/dorado basecaller \
         /opt/dorado/bin/dna_r10.4.1_e8.2_400bps_sup@v4.2.0 {input.pod5} \
         --kit-name SQK-NBD114-24 \
-        --reference {input.ref} \
-        -k 14 \
-        -w 10 \
-        --secondary no \
         > {output.bam}
 
         touch {output.task_done}
         """
 
-# Rule for sequencing summary
-rule dorado_summary:
+# Rule for minimap2 alignment to the reference genome
+rule minimap2:
     input:
-        bam = "basecalled/bam/1694205563_basecalled_aligned.bam",
-        check_input = dorado_basecaller_report
+        report_files = dorado_basecaller_report,
+        unmapped = "basecalled/bam/1694205563_basecalled.bam",
+        ref = reference,
+        anno = annotation
+    threads: 24
     output:
-        summary = "basecalled/summary/sequencing_summary.tsv",
-        task_done = "reports/dorado_summary/sequencing_summary.txt"
-    params:
-        stage = stage_dir,
-        lustre = lustre_dir,
-        dorado = dorado_dir
+        bam = "basecalled/bam/1694205563_basecalled_aligned.primary.bam",
+        task_done = "reports/dorado_basecaller/1694205563_basecalled_aligned.primary.txt"
+    shell:
+        """
+        minimap2 -ax splice -uf -k14 --secondary=no --junc-bed {input.anno} -t {threads} {input.ref} {input.fq} | samtools view -Sb > {output.bam}
+        
+touch {output.task_done}
+        """
+
+# Rule for sorting and indexing BAM files
+rule sort_and_index:
+    input:
+        report_files = minimap2_report,
+        bam = "basecalled/bam/1694205563_basecalled_aligned.primary.bam"
+    output:
+        sorted_bam = "bams/1694205563.sorted.primary.bam",
+        bam_index = "bams/1694205563.sorted.primary.bam.bai",
+        task_done = "reports/sorted/1694205563.sorted.primary.txt"
     threads: 24
     shell:
         """
-        singularity run --nv \
-        -B {params.stage} \
-        -B {params.lustre} \
-        {params.dorado} \
-        /opt/dorado/bin/dorado summary \
-        {input.bam} \
-        > {output.summary}
+        samtools sort -@ {threads} -o {output.sorted_bam} {input.bam}
+        samtools index {output.sorted_bam} {output.bam_index}
 
         touch {output.task_done}
         """
-
-# Rule for demultiplexing/barcode classification in dorado
-rule dorado_demux:
-    input:
-        bam = "basecalled/bam/1694205563_basecalled_aligned.bam",
-        check_input = dorado_summary_report
-    output:
-        demux = "basecalled/demux/",
-        task_done = "reports/dorado_demux/1694205563_basecalled_aligned.txt"
-    params:
-        stage = stage_dir,
-        lustre = lustre_dir,
-        dorado = dorado_dir
-    threads: 24
-    log:
-       out = "logs/dorado_demux/1694205563_basecalled_aligned.out",
-       err = "logs/dorado_demux/1694205563_basecalled_aligned.err"
-    shell:
-        """
-        singularity run --nv \
-        -B {params.stage} \
-        -B {params.lustre} \
-        {params.dorado} \
-        /opt/dorado/bin/dorado demux \
-        --output-dir {output.demux} \
-        --no-classify {input.bam} \
-        1> {log.out} 2> {log.err}
-
-        touch {output.task_done}
-        """
-
